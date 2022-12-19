@@ -46,7 +46,7 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CONTENTLESS_CORES_TAB,
-   "Standalone Cores"
+   "Contentless Cores"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_ADD_TAB,
@@ -292,7 +292,7 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_GOTO_CONTENTLESS_CORES,
-   "Standalone Cores"
+   "Contentless Cores"
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_GOTO_CONTENTLESS_CORES,
@@ -537,11 +537,11 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CORE_SET_STANDALONE_EXEMPT,
-   "Exclude From 'Standalone Cores' Menu"
+   "Exclude From 'Contentless Cores' Menu"
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_CORE_SET_STANDALONE_EXEMPT,
-   "Prevent this core from being displayed in the 'Standalone Cores' tab/menu. Only applies when display mode is set to 'Custom'."
+   "Prevent this core from being displayed in the 'Contentless Cores' tab/menu. Only applies when display mode is set to 'Custom'."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CORE_DELETE,
@@ -2723,7 +2723,7 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_INPUT_META_ENABLE_HOTKEY,
-   "When assigned, the 'Hotkey Enable' key must be held before any other hotkeys are recognized. Allows controller buttons to be mapped to hotkey functions without affecting normal input."
+   "When assigned, the 'Hotkey Enable' key must be held before any other hotkeys are recognized. Allows controller buttons to be mapped to hotkey functions without affecting normal input. Assigning the modifier to controller only will not require it for keyboard hotkeys, but both modifiers work for both devices."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_INPUT_HOTKEY_BLOCK_DELAY,
@@ -4974,11 +4974,11 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CONTENT_SHOW_CONTENTLESS_CORES,
-   "Show 'Standalone Cores'"
+   "Show 'Contentless Cores'"
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_CONTENT_SHOW_CONTENTLESS_CORES,
-   "Specify the type of core (if any) to show in the 'Standalone Cores' menu. When set to 'Custom', individual core visibility may be toggled via the 'Manage Cores' menu. (Restart Required on Ozone/XMB)"
+   "Specify the type of core (if any) to show in the 'Contentless Cores' menu. When set to 'Custom', individual core visibility may be toggled via the 'Manage Cores' menu. (Restart Required on Ozone/XMB)"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_SHOW_CONTENTLESS_CORES_ALL,
@@ -7924,11 +7924,11 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CHEAT_ADD_NEW_AFTER,
-   "Add New Cheat after This One"
+   "Add New Cheat After This"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CHEAT_ADD_NEW_BEFORE,
-   "Add New Cheat before This One"
+   "Add New Cheat Before This"
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_CHEAT_COPY_AFTER,
@@ -13396,11 +13396,11 @@ MSG_HASH(
    )
 MSG_HASH(
    MSG_CORE_SET_STANDALONE_EXEMPT_FAILED,
-   "Failed to remove core from 'Standalone Cores' list: "
+   "Failed to remove core from 'Contentless Cores' list: "
    )
 MSG_HASH(
    MSG_CORE_UNSET_STANDALONE_EXEMPT_FAILED,
-   "Failed to add core to 'Standalone Cores' list: "
+   "Failed to add core to 'Contentless Cores' list: "
    )
 MSG_HASH(
    MSG_CORE_DELETE_DISABLED,

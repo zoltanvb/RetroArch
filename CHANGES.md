@@ -15,6 +15,7 @@
 - D3D12: Added support for DRED (device remove extended data) (development aid - define DEVICE_DEBUG to use)
 - D3D12: Made D3D12 viewport and scissors to behave more like Vulkan drivers (or be more correct)
 - D3D12: Fixed validation error on start up due to buffers not being setup correctly for one frame
+- D3D12: Fixed some shaders not appearing with the d3d12 driver - this reintroduces a validation error though but it seems to work as in not crash and is the old RA behaviour. Guess we need a different way of fixing the validation issue.
 - DATABASE/EXPLORE/VIEW: Bugfix - RGUI did not clear thumbnail on non-playlist items such as Save and Delete
 menu_explore_get_entry_playlist_index() returns -1 on invalid entries, but the variable where it was stored was unsigned
 - DATABASE/EXPLORE/VIEW: Bugfix - XMB+Ozone cleared thumbnail in Quick Menu when navigating away from Run
@@ -34,6 +35,7 @@ menu_explore_get_entry_playlist_index() returns -1 on invalid entries, but the v
 - LEAPFROG: Add Leapfrog (LFx000) Target
 - LOCALIZATION: Updates
 - LOCALIZATION/INPUT/IME/MENU/ONSCREEN KEYBOARD: Extended IME and Korean OSK
+- MENU: Cleanup of help texts
 - MENU: Allow toggling info off with the same button
 - MENU: Allow menu wallpaper/background reset. Let's also remove the current wallpaper from the screen when pressing Start.
 - MENU: Null driver shows with different color (Added for all menus the ability to show "disabled" items with a muted color)
@@ -61,6 +63,8 @@ menu_explore_get_entry_playlist_index() returns -1 on invalid entries, but the v
 - MENU/UX/XMB: Optimized certain icon drawing loops (Main horizontal icons were looped even when not visible, and all previous "breadcrumb" icons were looped when only one certain was needed)
 - MENU/UX/MATERIALUI: Fixed showing icons where there should not be any (Waitable Swapchains, Show Recording + Streaming)
 - OSX/MACOS: Fixed Cocoa keyboard not allowing to map Analog stick
+- PS2: Use the recently created ps2_drivers which makes easier the loading and init of all the drivers: Memory Card, USB, HDD, Audio, Controllers
+- PS2: Adds exFat support for USB, and probably solves some unexpected issues when using an HDD driver for booting cores/games.
 - SDL GFX: Fix no menu on start/blank screen issue. 
 - SRAM: Don't init SRAM saving without content (gets rid of the redundant logging)
 
