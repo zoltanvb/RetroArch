@@ -2104,7 +2104,8 @@ static bool vulkan_update_display_mode(
       int dist        = delta_x * delta_x + delta_y * delta_y;
       int old_dist    = old_delta_x * old_delta_x + old_delta_y * old_delta_y;
       float rate_dist = fabsf((float)mode->parameters.refreshRate - target_refresh_rate);
-
+RARCH_DBG("[Vulkan]: Mode selection, req %d x %d %f Hz, this mode %d x %d % %d Hz.\n", info->width,info->height, target_refresh_rate,
+visible_width,visible_height, mode->parameters.refreshRate);
       if (dist < old_dist && rate_dist < 1.0f)
       {
          *width       = visible_width;
