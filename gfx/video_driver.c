@@ -1072,6 +1072,11 @@ void* video_display_server_init(enum rarch_display_type type)
          current_display_server = &dispserv_kms;
 #endif
          break;
+      case RARCH_DISPLAY_KHR:
+#if defined(HAVE_VULKAN_DISPLAY)
+         current_display_server = &dispserv_khr;
+#endif
+         break;
       default:
 #if defined(ANDROID)
          current_display_server = &dispserv_android;

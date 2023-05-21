@@ -94,7 +94,7 @@ enum autoswitch_refresh_rate
 
 enum rarch_display_type
 {
-   /* Non-bindable types like consoles, KMS, VideoCore, etc. */
+   /* Non-bindable types like consoles, VideoCore, etc. */
    RARCH_DISPLAY_NONE = 0,
    /* video_display => Display*, video_window => Window */
    RARCH_DISPLAY_X11,
@@ -102,7 +102,8 @@ enum rarch_display_type
    RARCH_DISPLAY_WIN32,
    RARCH_DISPLAY_WAYLAND,
    RARCH_DISPLAY_OSX,
-   RARCH_DISPLAY_KMS
+   RARCH_DISPLAY_KMS,
+   RARCH_DISPLAY_KHR
 };
 
 enum font_driver_render_api

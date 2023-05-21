@@ -306,6 +306,7 @@ VIDEO CONTEXT
 #include "../libretro-common/vulkan/vulkan_symbol_wrapper.c"
 #ifdef HAVE_VULKAN_DISPLAY
 #include "../gfx/drivers_context/khr_display_ctx.c"
+#include "../gfx/display_servers/dispserv_khr.c"
 #endif
 #endif
 

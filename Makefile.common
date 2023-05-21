@@ -1631,7 +1631,8 @@ ifeq ($(HAVE_VULKAN), 1)
    endif
 
    ifeq ($(HAVE_VULKAN_DISPLAY), 1)
-      OBJ += gfx/drivers_context/khr_display_ctx.o
+      OBJ += gfx/drivers_context/khr_display_ctx.o \
+             gfx/display_servers/dispserv_khr.o
    endif
    NEED_CXX_LINKER = 1
    DEFINES += -DHAVE_VULKAN
