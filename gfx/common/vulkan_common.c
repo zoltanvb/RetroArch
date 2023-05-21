@@ -2204,7 +2204,7 @@ retry:
       for (i = 0; i < mode_count; i++)
       {
          const VkDisplayModePropertiesKHR *mode = &modes[i];
-         if (vulkan_update_display_mode(width, height, mode, info))
+         if (vulkan_search_display_mode(width, height, mode, info))
             best_mode = modes[i].displayMode;
       }
 
