@@ -2076,6 +2076,9 @@ static bool vulkan_update_display_mode(
       const VkDisplayModePropertiesKHR *mode,
       const struct vulkan_display_surface_info *info)
 {
+   settings_t *settings      = config_get_ptr();
+   float target_refresh_rate = settings->floats.video_refresh_rate;
+
    unsigned visible_width  = mode->parameters.visibleRegion.width;
    unsigned visible_height = mode->parameters.visibleRegion.height;
 
@@ -2100,8 +2103,9 @@ static bool vulkan_update_display_mode(
 
       int dist        = delta_x * delta_x + delta_y * delta_y;
       int old_dist    = old_delta_x * old_delta_x + old_delta_y * old_delta_y;
+      float rate_dist = fabsf((float)mode->parameters.refreshRate - target_refresh_rate);
 
-      if (dist < old_dist)
+      if (dist < old_dist && rate_dist < 1.0f)
       {
          *width       = visible_width;
          *height      = visible_height;
