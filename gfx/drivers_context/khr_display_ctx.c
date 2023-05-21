@@ -126,6 +126,7 @@ static bool gfx_ctx_khr_display_set_video_mode(void *data,
    khr_display_ctx_data_t *khr    = (khr_display_ctx_data_t*)data;
    settings_t *settings           = config_get_ptr();
    unsigned video_monitor_index   = settings->uints.video_monitor_index;
+   unsigned refresh_rate_x1000    = settings->floats.video_refresh_rate * 1000;
 
    if (!fullscreen)
    {
@@ -136,6 +137,7 @@ static bool gfx_ctx_khr_display_set_video_mode(void *data,
    info.width                     = width;
    info.height                    = height;
    info.monitor_index             = video_monitor_index;
+   info.refresh_rate_x1000        = refresh_rate_x1000;
 
    if (!vulkan_surface_create(&khr->vk, VULKAN_WSI_DISPLAY, &info, NULL,
             0, 0, khr->swap_interval))

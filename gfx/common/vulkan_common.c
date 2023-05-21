@@ -2070,17 +2070,15 @@ bool vulkan_context_init(gfx_ctx_vulkan_data_t *vk,
    return true;
 }
 
-static bool vulkan_update_display_mode(
+static bool vulkan_search_display_mode(
       unsigned *width,
       unsigned *height,
       const VkDisplayModePropertiesKHR *mode,
       const struct vulkan_display_surface_info *info)
 {
-   settings_t *settings      = config_get_ptr();
-   float target_refresh_rate = settings->floats.video_refresh_rate;
-
    unsigned visible_width  = mode->parameters.visibleRegion.width;
    unsigned visible_height = mode->parameters.visibleRegion.height;
+   unsigned visible_rate   = mode->parameters.refreshRate;
 
    if (!info->width || !info->height)
    {
@@ -2098,15 +2096,18 @@ static bool vulkan_update_display_mode(
       /* For particular resolutions, find the closest. */
       int delta_x     = (int)info->width - (int)visible_width;
       int delta_y     = (int)info->height - (int)visible_height;
+      int delta_rate  = abs(info->refresh_rate_x1000 - visible_rate);
       int old_delta_x = (int)info->width - (int)*width;
       int old_delta_y = (int)info->height - (int)*height;
 
       int dist        = delta_x * delta_x + delta_y * delta_y;
       int old_dist    = old_delta_x * old_delta_x + old_delta_y * old_delta_y;
-      float rate_dist = fabsf((float)mode->parameters.refreshRate - target_refresh_rate);
-RARCH_DBG("[Vulkan]: Mode selection, req %d x %d %f Hz, this mode %d x %d % %d Hz.\n", info->width,info->height, target_refresh_rate,
-visible_width,visible_height, mode->parameters.refreshRate);
-      if (dist < old_dist && rate_dist < 1.0f)
+      
+      RARCH_DBG("[Vulkan]: Mode selection, req %d x %d %d mHz, this mode %d x %d %d mHz.\n", 
+         info->width,info->height, info->refresh_rate_x1000,
+         visible_width,visible_height, visible_rate);
+
+      if (dist < old_dist && delta_rate < 1000)
       {
          *width       = visible_width;
          *height      = visible_height;
