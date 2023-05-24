@@ -26,15 +26,6 @@
 #include "../../verbosity.h"
 #include "../../configuration.h"
 
-typedef struct
-{
-   gfx_ctx_vulkan_data_t vk;
-   int swap_interval;
-   unsigned width;
-   unsigned height;
-   unsigned refresh_rate_x1000;
-} khr_display_ctx_data_t;
-
 static void gfx_ctx_khr_display_destroy(void *data)
 {
    khr_display_ctx_data_t *khr = (khr_display_ctx_data_t*)data;
@@ -85,6 +76,8 @@ static void *gfx_ctx_khr_display_init(void *video_driver)
    }
 
    frontend_driver_install_signal_handler();
+   video_driver_display_type_set(RARCH_DISPLAY_KHR);
+   video_driver_display_userdata_set((uintptr_t)khr);
 
    return khr;
 

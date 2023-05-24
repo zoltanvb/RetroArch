@@ -211,6 +211,15 @@ typedef struct gfx_ctx_vulkan_data
    enum vulkan_wsi_type wsi_type;
 } gfx_ctx_vulkan_data_t;
 
+typedef struct
+{
+   gfx_ctx_vulkan_data_t vk;
+   int swap_interval;
+   unsigned width;
+   unsigned height;
+   unsigned refresh_rate_x1000;
+} khr_display_ctx_data_t;
+
 struct vulkan_display_surface_info
 {
    unsigned width;

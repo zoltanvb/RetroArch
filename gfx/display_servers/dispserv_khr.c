@@ -29,6 +29,7 @@
 
 
 #include "../video_display_server.h"
+#include "../common/vulkan_common.h"
 #include "../../retroarch.h"
 #include "../../verbosity.h"
 
@@ -55,17 +56,20 @@ static bool khr_display_server_set_resolution(void *data,
    bool retval = false;
    int reinit_flags                  = DRIVERS_CMD_ALL;
    dispserv_khr_t *dispserv = (dispserv_khr_t*)data;
+   khr_display_ctx_data_t *khr = (khr_display_ctx_data_t*)
+      video_driver_display_userdata_get();
 
    if (!dispserv)
       return false;
-/*
-   if (g_drm_mode)
+
+   if (khr)
    {
-      curr_refreshrate = drm_calc_refresh_rate(g_drm_mode);
-      curr_width       = g_drm_mode->hdisplay;
-      curr_height      = g_drm_mode->vdisplay;
+      curr_refreshrate = khr->refresh_rate_x1000 / 1000.0f;
+      curr_width       = khr->width;
+      curr_height      = khr->height;
       curr_bpp         = 32;
    }
+
    RARCH_DBG("[DRM]: Display server set resolution - incoming: %d x %d, %f Hz\n",width, height, hz);
 
    if (width == 0)
@@ -76,7 +80,7 @@ static bool khr_display_server_set_resolution(void *data,
       curr_bpp = curr_bpp;
    if (hz == 0)
       hz = curr_refreshrate;
-  */ 
+
    /* set core refresh from hz */
    video_monitor_set_refresh_rate(hz);
 
@@ -119,54 +123,70 @@ static int resolution_list_qsort_func(
 static void *khr_display_server_get_resolution_list(
       void *data, unsigned *len)
 {
-   unsigned i                        = 0;
-   unsigned j                        = 0;
-   unsigned count                    = 0;
-   unsigned curr_width               = 0;
-   unsigned curr_height              = 0;
-   unsigned curr_bpp                 = 0;
-   float curr_refreshrate            = 0;
-   unsigned curr_orientation         = 0;
    struct video_display_config *conf = NULL;
+   VkDisplayModePropertiesKHR *modes = NULL;
+   uint32_t display_count                    = 0;
+   VkDisplayPropertiesKHR *displays          = NULL;
+   uint32_t mode_count               = 0;
+   unsigned dpy, i, j;
+   settings_t *settings           = config_get_ptr();
+   unsigned monitor_index   = settings->uints.video_monitor_index;
+   khr_display_ctx_data_t *khr = (khr_display_ctx_data_t*)
+      video_driver_display_userdata_get();
+   gfx_ctx_vulkan_data_t vk = khr->vk;
 
-/*
-   if (g_drm_mode)
+   if (vkGetPhysicalDeviceDisplayPropertiesKHR(vk.context.gpu, &display_count, NULL) != VK_SUCCESS)
+         return NULL;
+   if (!(displays = (VkDisplayPropertiesKHR*)calloc(display_count, sizeof(*displays))))
+         return NULL;
+   if (vkGetPhysicalDeviceDisplayPropertiesKHR(vk.context.gpu, &display_count, displays) != VK_SUCCESS)
+         return NULL;
+
+   for (dpy = 0; dpy < display_count; dpy++)
    {
-      curr_refreshrate = drm_calc_refresh_rate(g_drm_mode);
-      curr_width       = g_drm_mode->hdisplay;
-      curr_height      = g_drm_mode->vdisplay;
-      curr_bpp         = 32;
+      VkDisplayKHR display;
+      if (monitor_index != 0 && (monitor_index - 1) != dpy)
+         continue;
+
+      display    = displays[dpy].display;
+
+      if (vkGetDisplayModePropertiesKHR(vk.context.gpu,
+            display, &mode_count, NULL) != VK_SUCCESS)
+         return NULL;
+
+      if (!(modes = (VkDisplayModePropertiesKHR*)calloc(mode_count, sizeof(*modes))))
+         return NULL;
+
+      if (!(conf = (struct video_display_config*)
+         calloc(*len, sizeof(struct video_display_config))))
+         return NULL;
+
+      if (vkGetDisplayModePropertiesKHR(vk.context.gpu,
+            display, &mode_count, modes) != VK_SUCCESS)
+         return NULL;
+
+      for (i = 0; i < mode_count; i++)
+      {
+         const VkDisplayModePropertiesKHR *mode = &modes[i];
+
+         conf[i].width       = mode->parameters.visibleRegion.width;
+         conf[i].height      = mode->parameters.visibleRegion.height;
+         conf[i].bpp         = 32;
+         conf[i].refreshrate = (float) (mode->parameters.refreshRate / 1000.0f);
+         conf[i].idx         = i;
+         conf[i].current     = false;
+      }
+
+      free(modes);
+      modes      = NULL;
    }
-
-   *len = g_drm_connector->count_modes;
-   if (!(conf = (struct video_display_config*)
-      calloc(*len, sizeof(struct video_display_config))))
-      return NULL;
-
-   for (i = 0, j = 0; (int)i < g_drm_connector->count_modes; i++)
-   {
-      conf[j].width       = g_drm_connector->modes[i].hdisplay;
-      conf[j].height      = g_drm_connector->modes[i].vdisplay;
-      conf[j].bpp         = 32;
-      conf[j].refreshrate = floor(drm_calc_refresh_rate(&g_drm_connector->modes[i]));
-      conf[j].idx         = j;
-      conf[j].current     = false;
-
-      if (     (conf[j].width       == curr_width)
-            && (conf[j].height      == curr_height)
-            && (conf[j].bpp         == curr_bpp)
-            && (drm_calc_refresh_rate(&g_drm_connector->modes[i]) == curr_refreshrate)
-         )
-         conf[j].current  = true;
-      j++;
-   }
+   free(displays);
 
    qsort(
-         conf, count,
+         conf, mode_count,
          sizeof(video_display_config_t),
          (int (*)(const void *, const void *))
                resolution_list_qsort_func);
-*/
    return conf;
 }
 
@@ -210,8 +230,6 @@ static bool khr_display_server_set_window_opacity(void *data, unsigned opacity)
 static uint32_t khr_display_server_get_flags(void *data)
 {
    uint32_t             flags   = 0;
-   BIT32_SET(flags, DISPSERV_CTX_CRT_SWITCHRES);
-
    return flags;
 }
 
