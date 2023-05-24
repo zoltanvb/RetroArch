@@ -125,6 +125,11 @@ static void *khr_display_server_get_resolution_list(
 {
    struct video_display_config *conf = NULL;
    VkDisplayModePropertiesKHR *modes = NULL;
+   unsigned curr_width               = 0;
+   unsigned curr_height              = 0;
+   unsigned curr_bpp                 = 0;
+   float curr_refreshrate            = 0;
+   unsigned count = 0;
    uint32_t display_count                    = 0;
    VkDisplayPropertiesKHR *displays          = NULL;
    uint32_t mode_count               = 0;
@@ -137,10 +142,17 @@ static void *khr_display_server_get_resolution_list(
 
    if (vkGetPhysicalDeviceDisplayPropertiesKHR(vk.context.gpu, &display_count, NULL) != VK_SUCCESS)
          return NULL;
+   RARCH_DBG("[KHR]: Display server get resolution list - display count: %d\n",display_count);
+
    if (!(displays = (VkDisplayPropertiesKHR*)calloc(display_count, sizeof(*displays))))
          return NULL;
    if (vkGetPhysicalDeviceDisplayPropertiesKHR(vk.context.gpu, &display_count, displays) != VK_SUCCESS)
          return NULL;
+
+   curr_refreshrate = khr->refresh_rate_x1000 / 1000.0f;
+   curr_width       = khr->width;
+   curr_height      = khr->height;
+   curr_bpp         = 32;
 
    for (dpy = 0; dpy < display_count; dpy++)
    {
@@ -156,7 +168,9 @@ static void *khr_display_server_get_resolution_list(
 
       if (!(modes = (VkDisplayModePropertiesKHR*)calloc(mode_count, sizeof(*modes))))
          return NULL;
+      RARCH_DBG("[KHR]: Display server get resolution list - mode count for display %d: %d\n",dpy,mode_count);
 
+      *len = mode_count;
       if (!(conf = (struct video_display_config*)
          calloc(*len, sizeof(struct video_display_config))))
          return NULL;
@@ -175,6 +189,12 @@ static void *khr_display_server_get_resolution_list(
          conf[i].refreshrate = (float) (mode->parameters.refreshRate / 1000.0f);
          conf[i].idx         = i;
          conf[i].current     = false;
+         if (  (conf[i].width       == curr_width)
+            && (conf[i].height      == curr_height)
+            && (conf[i].bpp         == curr_bpp)
+            && (conf[i].refreshrate == curr_refreshrate)
+         )
+            conf[i].current  = true;
       }
 
       free(modes);
@@ -183,7 +203,7 @@ static void *khr_display_server_get_resolution_list(
    free(displays);
 
    qsort(
-         conf, mode_count,
+         conf, count,
          sizeof(video_display_config_t),
          (int (*)(const void *, const void *))
                resolution_list_qsort_func);
