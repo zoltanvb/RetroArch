@@ -2971,7 +2971,8 @@ bool vulkan_create_swapchain(gfx_ctx_vulkan_data_t *vk,
          && (!(vk->context.flags & VK_CTX_FLAG_INVALID_SWAPCHAIN))
          &&   (vk->context.swapchain_width  == width)
          &&   (vk->context.swapchain_height == height)
-         &&   (vk->context.swap_interval    == swap_interval))
+         &&   (vk->context.swap_interval    == swap_interval)
+         && (!(vk->context.flags & VK_CTX_FLAG_REFRESH_RATE_CHANGE)))
    {
       /* Do not bother creating a swapchain redundantly. */
 #ifdef VULKAN_DEBUG
@@ -3020,6 +3021,7 @@ bool vulkan_create_swapchain(gfx_ctx_vulkan_data_t *vk,
       }
    }
 
+   vk->context.flags    &= ~VK_CTX_FLAG_REFRESH_RATE_CHANGE;
    vulkan_emulated_mailbox_deinit(&vk->mailbox);
 
    present_mode_count = 0;

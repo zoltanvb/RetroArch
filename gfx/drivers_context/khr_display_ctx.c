@@ -146,6 +146,7 @@ static bool gfx_ctx_khr_display_set_video_mode(void *data,
    info.height                    = height;
    info.monitor_index             = video_monitor_index;
    info.refresh_rate_x1000        = refresh_rate_x1000;
+   khr->vk.context.flags    &= VK_CTX_FLAG_REFRESH_RATE_CHANGE;
 
    if (!vulkan_surface_create(&khr->vk, VULKAN_WSI_DISPLAY, &info, NULL,
             0, 0, khr->swap_interval))
