@@ -3021,7 +3021,6 @@ bool vulkan_create_swapchain(gfx_ctx_vulkan_data_t *vk,
       }
    }
 
-   vk->context.flags    &= ~VK_CTX_FLAG_REFRESH_RATE_CHANGE;
    vulkan_emulated_mailbox_deinit(&vk->mailbox);
 
    present_mode_count = 0;
@@ -3241,6 +3240,14 @@ bool vulkan_create_swapchain(gfx_ctx_vulkan_data_t *vk,
    if (old_swapchain != VK_NULL_HANDLE)
       vkDestroySwapchainKHR(vk->context.device, old_swapchain, NULL);
 #endif
+
+   if(vk->context.flags & VK_CTX_FLAG_REFRESH_RATE_CHANGE)
+   {
+      vk->context.flags    &= ~VK_CTX_FLAG_REFRESH_RATE_CHANGE;
+      info.oldSwapchain = VK_NULL_HANDLE;
+      if (old_swapchain != VK_NULL_HANDLE)
+         vkDestroySwapchainKHR(vk->context.device, old_swapchain, NULL);
+   }
 
    if (vkCreateSwapchainKHR(vk->context.device,
             &info, NULL, &vk->swapchain) != VK_SUCCESS)
