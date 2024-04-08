@@ -1267,6 +1267,29 @@ static access_frame_t* translation_grab_frame(void)
       scaler->in_stride   = vp.width * 3;
       scaler->out_stride  = frame->width * 3;
       scaler_ctx_scale_direct(scaler, frame->data, bit24_image_prev);
+      RARCH_DBG("[Translate] translation_grab_frame 3b\n");
+      /* In-place upside-down reversal. Including it to scaler call would be more efficient, but it does not seem to handle negative stride. */
+      if(video_driver_is_hw_context())
+      {
+         unsigned row_src;
+         unsigned row_dst;
+         size_t row_size = frame->width * 3 * sizeof(uint8_t);
+         uint8_t *tmp_row = malloc(row_size);
+         RARCH_DBG("[Translate] Attempt in-place image flip for hardware context image\n");
+         if(tmp_row) 
+         {
+            for (row_dst = 0; row_dst < frame->height; row_dst++)
+            {
+               row_src = frame->height - row_dst -1;
+               memcpy(tmp_row,                                     (uint8_t*)frame->data + row_src * row_size, row_size);
+               memcpy((uint8_t*)frame->data + row_src * row_size , (uint8_t*)frame->data + row_dst * row_size, row_size);
+               memcpy((uint8_t*)frame->data + row_dst * row_size , tmp_row,                                    row_size);
+            }
+            free(tmp_row);
+         }
+         else
+            RARCH_ERR("[Translate] Could not allocate buffer for hardware context image flip\n");
+      }
    }
    else
    {
