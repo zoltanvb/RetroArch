@@ -1961,6 +1961,22 @@ const struct rarch_key_map rarch_key_map_winraw[] = {
  * so they can't be placed in a C source file */
 #endif
 
+#ifdef HAVE_TEST_DRIVERS
+const struct rarch_key_map rarch_key_map_test[] = {
+   { RETROK_ESCAPE, RETROK_ESCAPE },
+   { RETROK_F1, RETROK_F1 },
+   { RETROK_F2, RETROK_F2 },
+   { RETROK_F3, RETROK_F3 },
+   { RETROK_F4, RETROK_F4 },
+   { RETROK_F5, RETROK_F5 },
+   { RETROK_F6, RETROK_F6 },
+   { RETROK_F7, RETROK_F7 },
+   { RETROK_F8, RETROK_F8 },
+   { RETROK_F9, RETROK_F9 },
+   { RETROK_F10, RETROK_F10 }
+};
+#endif // HAVE_TEST_DRIVERS
+
 /* TODO/FIXME - global */
 enum retro_key rarch_keysym_lut[RETROK_LAST];
 

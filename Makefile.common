@@ -2434,6 +2434,7 @@ endif
 ifeq ($(HAVE_TEST_DRIVERS), 1)
   DEFINES += -DHAVE_TEST_DRIVERS
   OBJ += input/drivers_joypad/test_joypad.o
+  OBJ += input/drivers/test_input.o
 endif
 
 

@@ -1647,6 +1647,7 @@ static struct config_path_setting *populate_settings_path(
 
 #ifdef HAVE_TEST_DRIVERS
    SETTING_PATH("test_input_file_joypad",        settings->paths.test_input_file_joypad, false, NULL, true);
+   SETTING_PATH("test_input_file_general",       settings->paths.test_input_file_joypad, false, NULL, true);
 #endif
 
    SETTING_ARRAY("log_dir",                      settings->paths.log_dir, true, NULL, true);
