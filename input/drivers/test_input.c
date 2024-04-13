@@ -367,8 +367,8 @@ static void test_input_poll(void *data)
                test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 1;
             input_test_steps[i].handled = true;
             RARCH_DBG(
-               "[Test input driver]: Pressing keyboard button %d\n",
-               input_test_steps[i].param_num);
+               "[Test input driver]: Pressing keyboard button %d at frame %d\n",
+               input_test_steps[i].param_num, curr_frame);
          }
          else if( input_test_steps[i].action == INPUT_TEST_COMMAND_RELEASE_KEY)
          {
@@ -376,8 +376,8 @@ static void test_input_poll(void *data)
                test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 0;
             input_test_steps[i].handled = true;
             RARCH_DBG(
-               "[Test input driver]: Releasing keyboard button %d\n",
-               input_test_steps[i].param_num);
+               "[Test input driver]: Releasing keyboard button %d at frame %d\n",
+               input_test_steps[i].param_num, curr_frame);
          }
          else
          {
