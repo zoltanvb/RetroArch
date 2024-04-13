@@ -27,11 +27,12 @@
 #include "../input_driver.h"
 #include "../input_keymaps.h"
 #include "../../verbosity.h"
+#include "../../gfx/video_driver.h"
 
 #define MAX_TEST_STEPS 200
 
 #define INPUT_TEST_COMMAND_PRESS_KEY          1
-#define INPUT_TEST_COMMAND_RELEASE_KEY        1
+#define INPUT_TEST_COMMAND_RELEASE_KEY        2
 
 /* TODO/FIXME - static globals */
 static uint16_t test_key_state[DEFAULT_MAX_PADS+1][RETROK_LAST];
@@ -259,10 +260,10 @@ end:
 /********************************/
 
 
-uint16_t *test_keyboard_state_get(unsigned port)
+/*uint16_t *test_keyboard_state_get(unsigned port)
 {
    return test_key_state[port];
-}
+}*/
 
 static void test_keyboard_free(void)
 {
@@ -339,7 +340,9 @@ static void* test_input_init(const char *joypad_driver)
 {
    settings_t *settings = config_get_ptr();
    unsigned i;
-   
+
+   RARCH_DBG("[Test input driver]: start\n");
+
    input_test_file_read(settings->paths.test_input_file_general);
    if (last_test_step > MAX_TEST_STEPS)
       last_test_step = 0;
@@ -348,6 +351,47 @@ static void* test_input_init(const char *joypad_driver)
    return (void*)-1;
 }
 
+static void test_input_poll(void *data)
+{
+   video_driver_state_t *video_st = video_state_get_ptr();
+   uint64_t curr_frame            = video_st->frame_count;
+   unsigned i;
+   
+   for (i=0; i<last_test_step; i++)
+   {
+      if (!input_test_steps[i].handled && curr_frame > input_test_steps[i].frame)
+      {
+         if( input_test_steps[i].action == INPUT_TEST_COMMAND_PRESS_KEY)
+         {
+            if(input_test_steps[i].param_num < RETROK_LAST)
+               test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 1;
+            input_test_steps[i].handled = true;
+            RARCH_DBG(
+               "[Test input driver]: Pressing keyboard button %d\n",
+               input_test_steps[i].param_num);
+         }
+         else if( input_test_steps[i].action == INPUT_TEST_COMMAND_RELEASE_KEY)
+         {
+            if(input_test_steps[i].param_num < RETROK_LAST)
+               test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 0;
+            input_test_steps[i].handled = true;
+            RARCH_DBG(
+               "[Test input driver]: Releasing keyboard button %d\n",
+               input_test_steps[i].param_num);
+         }
+         else
+         {
+            input_test_steps[i].handled = true;
+            RARCH_WARN(
+               "[Test joypad driver]: Unrecognized action %d in step %d, skipping\n",
+               input_test_steps[i].action,i);
+         }
+
+      }
+   }
+}
+
+
 static uint64_t test_input_get_capabilities(void *data)
 {
    return UINT64_C(1) << RETRO_DEVICE_JOYPAD;
@@ -355,7 +399,7 @@ static uint64_t test_input_get_capabilities(void *data)
 
 input_driver_t input_test = {
    test_input_init,
-   NULL,                         /* poll */
+   test_input_poll,
    test_input_state,
    test_input_free_input,
    NULL,
