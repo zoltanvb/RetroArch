@@ -302,7 +302,7 @@ static int16_t test_input_state(
                   {
                      if (id < RARCH_BIND_LIST_END)
                         if (test_key_state[DEFAULT_MAX_PADS]
-                              [rarch_keysym_lut[binds[port][i].key]])
+                              [binds[port][i].key])
                            ret |= (1 << i);
                   }
                }
@@ -315,15 +315,14 @@ static int16_t test_input_state(
                if (
                      (id < RARCH_BIND_LIST_END
                       && test_key_state[DEFAULT_MAX_PADS]
-                      [rarch_keysym_lut[binds[port][id].key]])
+                      [binds[port][id].key])
                   )
                   return 1;
             }
             break;
          case RETRO_DEVICE_KEYBOARD:
-            if (id < RARCH_BIND_LIST_END)
-               return (test_key_state[DEFAULT_MAX_PADS]
-                     [rarch_keysym_lut[binds[port][id].key]]);
+            if (id && id < RETROK_LAST)
+               return (test_key_state[DEFAULT_MAX_PADS][id]);
             break;
       }
    }
@@ -347,7 +346,8 @@ static void* test_input_init(const char *joypad_driver)
    if (last_test_step > MAX_TEST_STEPS)
       last_test_step = 0;
       
-   input_keymaps_init_keyboard_lut(rarch_key_map_test);
+   /* No need for keyboard mapping look-up table */
+   /* input_keymaps_init_keyboard_lut(rarch_key_map_test);*/
    return (void*)-1;
 }
 
@@ -383,7 +383,7 @@ static void test_input_poll(void *data)
          {
             input_test_steps[i].handled = true;
             RARCH_WARN(
-               "[Test joypad driver]: Unrecognized action %d in step %d, skipping\n",
+               "[Test input driver]: Unrecognized action %d in step %d, skipping\n",
                input_test_steps[i].action,i);
          }
 
@@ -394,7 +394,13 @@ static void test_input_poll(void *data)
 
 static uint64_t test_input_get_capabilities(void *data)
 {
-   return UINT64_C(1) << RETRO_DEVICE_JOYPAD;
+   return
+        (1 << RETRO_DEVICE_JOYPAD)
+      | (1 << RETRO_DEVICE_ANALOG)
+      | (1 << RETRO_DEVICE_KEYBOARD)
+/*      | (1 << RETRO_DEVICE_MOUSE)
+      | (1 << RETRO_DEVICE_POINTER)
+      | (1 << RETRO_DEVICE_LIGHTGUN)*/;
 }
 
 input_driver_t input_test = {

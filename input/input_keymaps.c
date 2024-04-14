@@ -1961,7 +1961,7 @@ const struct rarch_key_map rarch_key_map_winraw[] = {
  * so they can't be placed in a C source file */
 #endif
 
-#ifdef HAVE_TEST_DRIVERS
+#if 0
 const struct rarch_key_map rarch_key_map_test[] = {
 /*   { RETROK_UNKNOWN    ,RETROK_UNKNOWN },*/
    { RETROK_BACKSPACE  ,RETROK_BACKSPACE },
@@ -2002,9 +2002,9 @@ const struct rarch_key_map rarch_key_map_test[] = {
    { RETROK_GREATER    ,RETROK_GREATER },
    { RETROK_QUESTION   ,RETROK_QUESTION },
    { RETROK_AT         ,RETROK_AT },
-   { RETROK_LEFTBRACKET ,RETROK_LEFTBRACKET },
+   { RETROK_LEFTBRACKET,RETROK_LEFTBRACKET },
    { RETROK_BACKSLASH  ,RETROK_BACKSLASH },
-   { RETROK_RIGHTBRACKET ,RETROK_RIGHTBRACKET },
+   { RETROK_RIGHTBRACKET,RETROK_RIGHTBRACKET },
    { RETROK_CARET      ,RETROK_CARET },
    { RETROK_UNDERSCORE ,RETROK_UNDERSCORE },
    { RETROK_BACKQUOTE  ,RETROK_BACKQUOTE },
@@ -2051,7 +2051,7 @@ const struct rarch_key_map rarch_key_map_test[] = {
    { RETROK_KP9        ,RETROK_KP9 },
    { RETROK_KP_PERIOD  ,RETROK_KP_PERIOD },
    { RETROK_KP_DIVIDE  ,RETROK_KP_DIVIDE },
-   { RETROK_KP_MULTIPLY ,RETROK_KP_MULTIPLY },
+   { RETROK_KP_MULTIPLY,RETROK_KP_MULTIPLY },
    { RETROK_KP_MINUS   ,RETROK_KP_MINUS },
    { RETROK_KP_PLUS    ,RETROK_KP_PLUS },
    { RETROK_KP_ENTER   ,RETROK_KP_ENTER },
