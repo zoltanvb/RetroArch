@@ -290,36 +290,43 @@ static int16_t test_input_state(
    {
       switch (device)
       {
+/* TODO: something clear here */
          case RETRO_DEVICE_JOYPAD:
             if (id == RETRO_DEVICE_ID_JOYPAD_MASK)
             {
                unsigned i;
                int16_t ret = 0;
 
-               for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
+               if (!keyboard_mapping_blocked && id < RARCH_BIND_LIST_END)
                {
-                  if (binds[port][i].valid)
+                  for (i = 0; i < RARCH_FIRST_CUSTOM_BIND; i++)
                   {
-                     if (id < RARCH_BIND_LIST_END)
-                        if (test_key_state[DEFAULT_MAX_PADS]
-                              [binds[port][i].key])
+                     if (binds[port][i].valid)
+                     {
+                        if (     (binds[port][i].key && binds[port][i].key < RETROK_LAST)
+                              && test_key_state[DEFAULT_MAX_PADS][binds[port][id].key])
                            ret |= (1 << i);
+                     }
                   }
                }
-
                return ret;
             }
 
-            if (binds[port][id].valid)
+            if (id < RARCH_BIND_LIST_END)
             {
-               if (
-                     (id < RARCH_BIND_LIST_END
-                      && test_key_state[DEFAULT_MAX_PADS]
-                      [binds[port][id].key])
-                  )
-                  return 1;
+               if (binds[port][id].valid)
+               {
+                  if (     (binds[port][id].key && binds[port][id].key < RETROK_LAST)
+                        && test_key_state[DEFAULT_MAX_PADS][binds[port][id].key]
+                        && (id == RARCH_GAME_FOCUS_TOGGLE || !keyboard_mapping_blocked)
+                     )
+                     return 1;
+
+               }
             }
             break;
+
+
          case RETRO_DEVICE_KEYBOARD:
             if (id && id < RETROK_LAST)
                return (test_key_state[DEFAULT_MAX_PADS][id]);
@@ -364,7 +371,10 @@ static void test_input_poll(void *data)
          if( input_test_steps[i].action == INPUT_TEST_COMMAND_PRESS_KEY)
          {
             if(input_test_steps[i].param_num < RETROK_LAST)
+            {
                test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 1;
+               input_keyboard_event(true, input_test_steps[i].param_num, 0, 0, RETRO_DEVICE_KEYBOARD);
+            }
             input_test_steps[i].handled = true;
             RARCH_DBG(
                "[Test input driver]: Pressing keyboard button %d at frame %d\n",
@@ -373,7 +383,10 @@ static void test_input_poll(void *data)
          else if( input_test_steps[i].action == INPUT_TEST_COMMAND_RELEASE_KEY)
          {
             if(input_test_steps[i].param_num < RETROK_LAST)
+            {
                test_key_state[DEFAULT_MAX_PADS][input_test_steps[i].param_num] = 0;
+               input_keyboard_event(false, input_test_steps[i].param_num, 0, 0, RETRO_DEVICE_KEYBOARD);
+            }
             input_test_steps[i].handled = true;
             RARCH_DBG(
                "[Test input driver]: Releasing keyboard button %d at frame %d\n",
