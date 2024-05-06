@@ -4428,11 +4428,14 @@ bool video_driver_init_input(
    input_driver_t         **input = &input_driver_st.current_driver;
    if (*input)
 #if HAVE_TEST_DRIVERS
-      if (strcmp(settings->arrays.input_driver,"test") != 0 ||
-          string_is_empty(settings->paths.test_input_file_general))
-         /* Video driver did provide an input driver,
-          * and test driver is not in use or has no input file. */
+      if (strcmp(settings->arrays.input_driver,"test") != 0)
+         /* Test driver not in use, keep selected driver */
          return true;
+      else if (string_is_empty(settings->paths.test_input_file_general))
+          {
+            RARCH_LOG("[Input]: Test input driver selected, but no input file provided - falling back.\n");
+            return true;
+          }
       else
          RARCH_LOG("[Video]: Graphics driver initialized an input driver, but ignoring it as test input driver is in use.\n");
 #else
