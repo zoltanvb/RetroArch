@@ -68,13 +68,16 @@ static struct string_list *ui_companion_cocoatouch_get_app_icons(void)
          attr.i = 0;
          NSDictionary *iconfiles = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleIcons"];
          NSString *primary;
+         const char *cstr;
 #if TARGET_OS_TV
          primary = iconfiles[@"CFBundlePrimaryIcon"];
 #else
          primary = iconfiles[@"CFBundlePrimaryIcon"][@"CFBundleIconName"];
 #endif
          list = string_list_new();
-         string_list_append(list, [primary cStringUsingEncoding:kCFStringEncodingUTF8], attr);
+         cstr = [primary cStringUsingEncoding:kCFStringEncodingUTF8];
+         if (cstr)
+            string_list_append(list, cstr, attr);
 
          NSArray<NSString *> *alts;
 #if TARGET_OS_TV
@@ -84,7 +87,11 @@ static struct string_list *ui_companion_cocoatouch_get_app_icons(void)
 #endif
          NSArray<NSString *> *sorted = [alts sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
          for (NSString *str in sorted)
-            string_list_append(list, [str cStringUsingEncoding:kCFStringEncodingUTF8], attr);
+         {
+            cstr = [str cStringUsingEncoding:kCFStringEncodingUTF8];
+            if (cstr)
+               string_list_append(list, cstr, attr);
+         }
       });
 
    return list;
@@ -656,8 +663,11 @@ enum
    NSFileManager *manager = [NSFileManager defaultManager];
    NSString     *filename = (NSString*)url.path.lastPathComponent;
    NSError         *error = nil;
-   NSString  *destination = [self.documentsDirectory stringByAppendingPathComponent:filename];
-   /* Copy file to documents directory if it's not already 
+   settings_t *settings   = config_get_ptr();
+   char fullpath[PATH_MAX_LENGTH] = {0};
+   fill_pathname_join_special(fullpath, settings->paths.directory_core_assets, [filename UTF8String], sizeof(fullpath));
+   NSString  *destination = [NSString stringWithUTF8String:fullpath];
+   /* Copy file to documents directory if it's not already
     * inside Documents directory */
    if ([url startAccessingSecurityScopedResource]) {
       if (![[url path] containsString: self.documentsDirectory])
@@ -665,6 +675,13 @@ enum
             [manager copyItemAtPath:[url path] toPath:destination error:&error];
       [url stopAccessingSecurityScopedResource];
    }
+   task_push_dbscan(
+      settings->paths.directory_playlist,
+      settings->paths.path_content_database,
+      fullpath,
+      false,
+      false,
+      NULL);
    return true;
 }
 

@@ -429,8 +429,22 @@ static int general_push(menu_displaylist_info_t *info,
    {
       /* Need to use the scratch buffer here */
       char tmp_str[PATH_MAX_LENGTH];
-      fill_pathname_join_special(tmp_str, menu->scratch2_buf,
+#if IOS
+      if (path_is_absolute(menu->scratch_buf))
+         strlcpy(tmp_str, menu->scratch_buf, sizeof(tmp_str));
+      else
+      {
+         char tmp_path[PATH_MAX_LENGTH];
+         fill_pathname_expand_special(tmp_path, menu->scratch2_buf, sizeof(tmp_path));
+         const char *menu_path = tmp_path;
+         fill_pathname_join_special(tmp_str, menu_path,
+               menu->scratch_buf, sizeof(tmp_str));
+      }
+#else
+      const char *menu_path = menu->scratch2_buf;
+      fill_pathname_join_special(tmp_str, menu_path,
             menu->scratch_buf, sizeof(tmp_str));
+#endif
 
       if (!string_is_empty(info->path))
          free(info->path);

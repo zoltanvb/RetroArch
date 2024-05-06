@@ -1903,7 +1903,7 @@ bool runloop_environment_cb(unsigned cmd, void *data)
          unsigned rotation       = *(const unsigned*)data;
          bool video_allow_rotate = settings->bools.video_allow_rotate;
 
-         RARCH_LOG("[Environ]: SET_ROTATION: %u\n", rotation);
+         RARCH_DBG("[Environ]: SET_ROTATION: %u\n", rotation);
          if (sys_info)
             sys_info->core_requested_rotation = rotation;
 
@@ -5309,7 +5309,7 @@ void runloop_msg_queue_push(const char *msg,
    if (is_accessibility_enabled(
             accessibility_enable,
             access_st->enabled))
-      navigation_say(
+      accessibility_speak_priority(
             accessibility_enable,
             accessibility_narrator_speech_speed,
             (char*) msg, 0);
@@ -7334,7 +7334,7 @@ void runloop_task_msg_queue_push(
       if (is_accessibility_enabled(
             accessibility_enable,
             access_st->enabled))
-         navigation_say(
+         accessibility_speak_priority(
                accessibility_enable,
                accessibility_narrator_speech_speed,
                (char*)msg, 0);

@@ -689,6 +689,7 @@
 #define DEFAULT_QUICK_MENU_SHOW_UNDO_SAVE_LOAD_STATE true
 #define DEFAULT_QUICK_MENU_SHOW_REPLAY false
 #define DEFAULT_QUICK_MENU_SHOW_ADD_TO_FAVORITES true
+#define DEFAULT_QUICK_MENU_SHOW_ADD_TO_PLAYLIST false
 #define DEFAULT_QUICK_MENU_SHOW_START_RECORDING true
 #define DEFAULT_QUICK_MENU_SHOW_START_STREAMING true
 #define DEFAULT_QUICK_MENU_SHOW_SET_CORE_ASSOCIATION true
@@ -1164,7 +1165,12 @@
 #endif
 
 /* Will sync audio. (recommended) */
+#ifdef IOS
+/* FIXME: coreaudio will cause the main thread to hang on backgrounding, causing a crash */
+#define DEFAULT_AUDIO_SYNC false
+#else
 #define DEFAULT_AUDIO_SYNC true
+#endif
 
 /* Audio rate control. */
 #if !defined(RARCH_CONSOLE)
@@ -1822,13 +1828,7 @@
 
 #define DEFAULT_AI_SERVICE_MODE 1
 
-#define DEFAULT_AI_SERVICE_TEXT_POSITION 0
-#define DEFAULT_AI_SERVICE_TEXT_PADDING 5
-
 #define DEFAULT_AI_SERVICE_URL "http://localhost:4404/"
-
-#define DEFAULT_AI_SERVICE_POLL_DELAY 0
-#define MAXIMUM_AI_SERVICE_POLL_DELAY 500
 
 #if defined(HAVE_FFMPEG) || defined(HAVE_MPV)
 #define DEFAULT_BUILTIN_MEDIAPLAYER_ENABLE true
