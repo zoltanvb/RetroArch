@@ -403,7 +403,7 @@ static void *win32_display_server_get_resolution_list(
       conf[j].height      = dm.dmPelsHeight;
       conf[j].bpp         = dm.dmBitsPerPel;
       conf[j].refreshrate = dm.dmDisplayFrequency;
-      conf[j].refreshrate_float = 0.0f
+      conf[j].refreshrate_float = 0.0f;
       conf[j].idx         = j;
       conf[j].current     = false;
       conf[j].interlaced  = (dm.dmDisplayFlags & DM_INTERLACED) ? true : false;
