@@ -136,8 +136,8 @@ static void *kms_display_server_get_resolution_list(
       curr_width       = g_drm_mode->hdisplay;
       curr_height      = g_drm_mode->vdisplay;
       curr_bpp         = 32;
-      curr_interlaced  = (g_drm_mode->flags | DRM_MODE_FLAG_INTERLACE) ? true : false;
-      curr_doublestrike = (g_drm_mode->flags | DRM_MODE_FLAG_DBLSCAN) ? true : false;
+      curr_interlaced  = (g_drm_mode->flags & DRM_MODE_FLAG_INTERLACE) ? true : false;
+      curr_doublestrike = (g_drm_mode->flags & DRM_MODE_FLAG_DBLSCAN) ? true : false;
    }
 
    *len = g_drm_connector->count_modes;
@@ -152,10 +152,17 @@ static void *kms_display_server_get_resolution_list(
       conf[j].bpp         = 32;
       conf[j].refreshrate = floor(drm_calc_refresh_rate(&g_drm_connector->modes[i]));
       conf[j].refreshrate_float = drm_calc_refresh_rate(&g_drm_connector->modes[i]);
-      conf[j].interlaced  = (g_drm_connector->modes[i].flags | DRM_MODE_FLAG_INTERLACE) ? true : false;
-      conf[j].doublestrike = (g_drm_connector->modes[i].flags | DRM_MODE_FLAG_DBLSCAN) ? true : false;
+      conf[j].interlaced  = (g_drm_connector->modes[i].flags & DRM_MODE_FLAG_INTERLACE) ? true : false;
+      conf[j].doublestrike = (g_drm_connector->modes[i].flags & DRM_MODE_FLAG_DBLSCAN) ? true : false;
       conf[j].idx         = j;
       conf[j].current     = false;
+      RARCH_DBG("[DRM]: Display server resolution list %02d: %d x %d, %f Hz, interlace %s, doublestrike %s\n",
+                j,
+                conf[j].width,
+                conf[j].height,
+                conf[j].refreshrate_float,
+                conf[j].interlaced ? "true" : "false",
+                conf[j].doublestrike ? "true" : "false");
 
       if (     (conf[j].width       == curr_width)
             && (conf[j].height      == curr_height)
