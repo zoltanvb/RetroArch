@@ -8351,18 +8351,18 @@ unsigned menu_displaylist_build_list(
                {
                   char val_d[256], str[256];
                   if (video_list[i].refreshrate_float > 0.0f)
-                     snprintf(str, sizeof(str), "%dx%d%s%s (%.2f Hz)",
+                     snprintf(str, sizeof(str), "%dx%d (%.3f Hz)%s%s",
                         video_list[i].width,
                         video_list[i].height,
-                        video_list[i].interlaced ? "i":"",
-                        video_list[i].dblscan    ? "d":"",
-                        video_list[i].refreshrate_float);
+                        video_list[i].refreshrate_float,
+                        video_list[i].interlaced ? "[i]":"",
+                        video_list[i].dblscan    ? "[d]":"");
                   else
-                     snprintf(str, sizeof(str), "%dx%d%s (%d Hz)",
+                     snprintf(str, sizeof(str), "%dx%d (%d Hz)%s",
                         video_list[i].width,
                         video_list[i].height,
-                        video_list[i].interlaced ? "i":"",
-                        video_list[i].refreshrate);
+                        video_list[i].refreshrate,
+                        video_list[i].interlaced ? "[i]":"");
                   snprintf(val_d, sizeof(val_d), "%d", i);
                   if (menu_entries_append(list,
                            str,

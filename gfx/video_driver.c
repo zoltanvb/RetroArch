@@ -1214,8 +1214,9 @@ bool video_display_server_has_refresh_rate(float hz)
 
       for (i = 0; i < size && !rate_exists; i++)
       {
-         if (   (video_list[i].width       == video_driver_width)
-             && (video_list[i].height      == video_driver_height)
+         /* Float difference added to recognize 49.95Hz modelines for PAL */
+         if (   (video_list[i].width        == video_driver_width)
+             && (video_list[i].height       == video_driver_height)
              && ((video_list[i].refreshrate == floor(hz)) ||
                  (video_list[i].refreshrate_float - hz < 0.06f)))
             rate_exists = true;
