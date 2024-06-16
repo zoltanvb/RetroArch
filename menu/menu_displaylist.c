@@ -8350,7 +8350,13 @@ unsigned menu_displaylist_build_list(
                for (i = 0; i < size; i++)
                {
                   char val_d[256], str[256];
-                  snprintf(str, sizeof(str), "%dx%d (%d Hz)",
+                  if (video_list[i].refreshrate_float > 0.0f)
+                     snprintf(str, sizeof(str), "%dx%d (%.2f Hz)",
+                        video_list[i].width,
+                        video_list[i].height,
+                        video_list[i].refreshrate_float);
+                  else
+                     snprintf(str, sizeof(str), "%dx%d (%d Hz)",
                         video_list[i].width,
                         video_list[i].height,
                         video_list[i].refreshrate);

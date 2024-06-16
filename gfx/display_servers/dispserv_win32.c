@@ -356,6 +356,7 @@ static void *win32_display_server_get_resolution_list(
 #if _WIN32_WINNT >= 0x0500
    unsigned curr_orientation         = 0;
 #endif
+   bool curr_interlaced              = 0;
    struct video_display_config *conf = NULL;
 
    if (win32_get_video_output(&dm, -1, sizeof(dm)))
@@ -367,6 +368,7 @@ static void *win32_display_server_get_resolution_list(
 #if _WIN32_WINNT >= 0x0500
       curr_orientation               = dm.dmDisplayOrientation;
 #endif
+      curr_interlaced                = (dm.dmDisplayFlags & DM_INTERLACED) ? true : false;
    }
 
    for (i = 0; win32_get_video_output(&dm, i, sizeof(dm)); i++)
@@ -407,12 +409,13 @@ static void *win32_display_server_get_resolution_list(
       conf[j].idx         = j;
       conf[j].current     = false;
       conf[j].interlaced  = (dm.dmDisplayFlags & DM_INTERLACED) ? true : false;
-      conf[j].doublestrike = false;
+      conf[j].dblscan     = false;
 
       if (     (conf[j].width       == curr_width)
             && (conf[j].height      == curr_height)
             && (conf[j].bpp         == curr_bpp)
             && (conf[j].refreshrate == curr_refreshrate)
+            && (conf[j].interlaced  == curr_interlaced)
          )
          conf[j].current  = true;
 

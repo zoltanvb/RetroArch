@@ -40,7 +40,7 @@ typedef struct video_display_config
    unsigned idx;
    bool current;
    bool interlaced;
-   bool doublestrike;
+   bool dblscan;
    float refreshrate_float;
 } video_display_config_t;
 

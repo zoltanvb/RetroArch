@@ -124,7 +124,7 @@ static void *kms_display_server_get_resolution_list(
    unsigned curr_height              = 0;
    unsigned curr_bpp                 = 0;
    bool curr_interlaced              = false;
-   bool curr_doublestrike            = false;
+   bool curr_dblscan            = false;
    float curr_refreshrate            = 0;
    unsigned curr_orientation         = 0;
    struct video_display_config *conf = NULL;
@@ -137,7 +137,7 @@ static void *kms_display_server_get_resolution_list(
       curr_height      = g_drm_mode->vdisplay;
       curr_bpp         = 32;
       curr_interlaced  = (g_drm_mode->flags & DRM_MODE_FLAG_INTERLACE) ? true : false;
-      curr_doublestrike = (g_drm_mode->flags & DRM_MODE_FLAG_DBLSCAN) ? true : false;
+      curr_dblscan     = (g_drm_mode->flags & DRM_MODE_FLAG_DBLSCAN)   ? true : false;
    }
 
    *len = g_drm_connector->count_modes;
@@ -153,23 +153,16 @@ static void *kms_display_server_get_resolution_list(
       conf[j].refreshrate = floor(drm_calc_refresh_rate(&g_drm_connector->modes[i]));
       conf[j].refreshrate_float = drm_calc_refresh_rate(&g_drm_connector->modes[i]);
       conf[j].interlaced  = (g_drm_connector->modes[i].flags & DRM_MODE_FLAG_INTERLACE) ? true : false;
-      conf[j].doublestrike = (g_drm_connector->modes[i].flags & DRM_MODE_FLAG_DBLSCAN) ? true : false;
+      conf[j].dblscan     = (g_drm_connector->modes[i].flags & DRM_MODE_FLAG_DBLSCAN)   ? true : false;
       conf[j].idx         = j;
       conf[j].current     = false;
-      RARCH_DBG("[DRM]: Display server resolution list %02d: %d x %d, %f Hz, interlace %s, doublestrike %s\n",
-                j,
-                conf[j].width,
-                conf[j].height,
-                conf[j].refreshrate_float,
-                conf[j].interlaced ? "true" : "false",
-                conf[j].doublestrike ? "true" : "false");
 
       if (     (conf[j].width       == curr_width)
             && (conf[j].height      == curr_height)
             && (conf[j].bpp         == curr_bpp)
-            && (drm_calc_refresh_rate(&g_drm_connector->modes[i]) == curr_refreshrate)
+            && (conf[j].refreshrate_float == curr_refreshrate)
             && (conf[j].interlaced  == curr_interlaced)
-            && (conf[j].doublestrike == curr_doublestrike)
+            && (conf[j].dblscan     == curr_dblscan)
          )
          conf[j].current  = true;
       j++;

@@ -1216,7 +1216,8 @@ bool video_display_server_has_refresh_rate(float hz)
       {
          if (   (video_list[i].width       == video_driver_width)
              && (video_list[i].height      == video_driver_height)
-             && (video_list[i].refreshrate == floor(hz)))
+             && ((video_list[i].refreshrate == floor(hz)) ||
+                 (video_list[i].refreshrate_float - hz < 0.06f)))
             rate_exists = true;
       }
 
