@@ -56,30 +56,12 @@ typedef struct gfx_ctx_w_vk_data
 } gfx_ctx_w_vk_data_t;
 
 /* TODO/FIXME - static globals */
-static gfx_ctx_vulkan_data_t win32_vk;
-static void             *dinput_vk        = NULL;
-static int              win32_vk_interval = 0;
+gfx_ctx_vulkan_data_t win32_vk;
+static void      *dinput_vk        = NULL;
+int              win32_vk_interval = 0;
 
-void create_vk_context(HWND hwnd, bool *quit)
-{
-   RECT rect;
-   HINSTANCE instance;
-   unsigned width  = 0;
-   unsigned height = 0;
-
-   GetClientRect(hwnd, &rect);
-
-   instance = GetModuleHandle(NULL);
-   width    = rect.right - rect.left;
-   height   = rect.bottom - rect.top;
-
-   if (!vulkan_surface_create(&win32_vk, VULKAN_WSI_WIN32,
-            &instance, &hwnd,
-            width, height, win32_vk_interval))
-      *quit = true;
-
-   g_win32_flags |= WIN32_CMN_FLAG_INITED;
-}
+/* FORWARD DECLARATIONS */
+void win32_get_video_size(void *data, unsigned *width, unsigned *height);
 
 static void gfx_ctx_w_vk_swap_interval(void *data, int interval)
 {
@@ -100,7 +82,7 @@ static void gfx_ctx_w_vk_check_window(void *data, bool *quit,
    win32_check_window(NULL, quit, resize, width, height);
 
    if (win32_vk.flags & VK_DATA_FLAG_NEED_NEW_SWAPCHAIN)
-      *resize = true;
+      *resize               = true;
 
    /* Trigger video driver init when changing refresh rate
     * in fullscreen while dimensions stay the same.
@@ -152,47 +134,6 @@ static bool gfx_ctx_w_vk_set_resize(void *data,
 
    RARCH_ERR("[Vulkan]: Failed to update swapchain.\n");
    return false;
-}
-
-static void gfx_ctx_w_vk_update_title(void *data)
-{
-   char title[128];
-
-   title[0] = '\0';
-
-   video_driver_get_window_title(title, sizeof(title));
-
-   if (title[0])
-   {
-      const ui_window_t *window = ui_companion_driver_get_window_ptr();
-
-      if (window)
-         window->set_title(&main_window, title);
-   }
-}
-
-static void gfx_ctx_w_vk_get_video_size(void *data,
-      unsigned *width, unsigned *height)
-{
-   HWND         window  = win32_get_window();
-
-   if (!window)
-   {
-      RECT mon_rect;
-      MONITORINFOEX current_mon;
-      unsigned mon_id           = 0;
-      HMONITOR hm_to_use        = NULL;
-
-      win32_monitor_info(&current_mon, &hm_to_use, &mon_id);
-      mon_rect = current_mon.rcMonitor;
-      *width  = mon_rect.right - mon_rect.left;
-      *height = mon_rect.bottom - mon_rect.top;
-   }
-   else
-   {
-      *width  = g_win32_resize_width;
-      *height = g_win32_resize_height;
-   }
 }
 
 static void gfx_ctx_w_vk_destroy(void *data)
@@ -322,12 +263,7 @@ static void gfx_ctx_w_vk_input_driver(void *data,
 static enum gfx_ctx_api gfx_ctx_w_vk_get_api(void *data) { return GFX_CTX_VULKAN_API; }
 
 static bool gfx_ctx_w_vk_bind_api(void *data,
-      enum gfx_ctx_api api, unsigned major, unsigned minor)
-{
-   if (api == GFX_CTX_VULKAN_API)
-      return true;
-   return false;
-}
+      enum gfx_ctx_api api, unsigned major, unsigned minor) { return (api == GFX_CTX_VULKAN_API); }
 
 static void gfx_ctx_w_vk_bind_hw_render(void *data, bool enable) { }
 
@@ -343,15 +279,7 @@ static uint32_t gfx_ctx_w_vk_get_flags(void *data)
 }
 
 static void gfx_ctx_w_vk_set_flags(void *data, uint32_t flags) { }
-
-static void gfx_ctx_w_vk_get_video_output_size(void *data,
-      unsigned *width, unsigned *height, char *desc, size_t desc_len)
-{
-   win32_get_video_output_size(width, height, desc, desc_len);
-}
-
 static void gfx_ctx_w_vk_get_video_output_prev(void *data) { }
-
 static void gfx_ctx_w_vk_get_video_output_next(void *data) { }
 
 const gfx_ctx_driver_t gfx_ctx_w_vk = {
@@ -361,18 +289,18 @@ const gfx_ctx_driver_t gfx_ctx_w_vk = {
    gfx_ctx_w_vk_bind_api,
    gfx_ctx_w_vk_swap_interval,
    gfx_ctx_w_vk_set_video_mode,
-   gfx_ctx_w_vk_get_video_size,
+   win32_get_video_size,
    win32_get_refresh_rate,
-   gfx_ctx_w_vk_get_video_output_size,
+   win32_get_video_output_size,
    gfx_ctx_w_vk_get_video_output_prev,
    gfx_ctx_w_vk_get_video_output_next,
    win32_get_metrics,
    NULL,
-   gfx_ctx_w_vk_update_title,
+   video_driver_update_title,
    gfx_ctx_w_vk_check_window,
    gfx_ctx_w_vk_set_resize,
    win32_has_focus,
-   win32_suppress_screensaver,
+   win32_suspend_screensaver,
    true,                            /* has_windowed */
    gfx_ctx_w_vk_swap_buffers,
    gfx_ctx_w_vk_input_driver,

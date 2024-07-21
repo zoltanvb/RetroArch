@@ -79,11 +79,11 @@ static void get_first_valid_core(char* path_return, size_t len)
       {
          if (!ent)
             break;
-         if (strlen(ent->d_name) > strlen(extension) 
+         if (strlen(ent->d_name) > strlen(extension)
                && !strcmp(ent->d_name + strlen(ent->d_name) - strlen(extension), extension))
          {
-            strlcpy(path_return, "sdmc:/retroarch/cores/", len);
-            strlcat(path_return, ent->d_name, len);
+            size_t _len = strlcpy(path_return, "sdmc:/retroarch/cores/", len);
+            strlcpy(path_return + _len, ent->d_name, len - _len);
             break;
          }
       }
@@ -244,8 +244,8 @@ static void frontend_ctr_exec(const char *path, bool should_load_game)
          is corrupt so we have to quit */
       {
          char error[PATH_MAX + 32];
-
-         snprintf(error, sizeof(error), "Can't launch core: %s", path);
+         size_t _len = strlcpy(error, "Can't launch core: ", sizeof(error));
+         strlcpy(error + _len, path, sizeof(error) - _len);
          error_and_quit(error);
       }
    }
@@ -335,7 +335,7 @@ static void ctr_check_dspfirm(void)
                {
                   size_t dspfirm_size = ptr[1];
                   ptr -= 0x40;
-                  if ((ptr + (dspfirm_size >> 2)) > 
+                  if ((ptr + (dspfirm_size >> 2)) >
                         (code_buffer + (code_size >> 2)))
                      break;
 
@@ -377,7 +377,7 @@ u8* gfxBottomFramebuffers[2];
 
 void gfxSetFramebufferInfo(gfxScreen_t screen, u8 id)
 {
-   if(screen==GFX_TOP)
+   if (screen==GFX_TOP)
    {
       u8 enable3d = 0;
       u8 bit5=(enable3d != 0);
@@ -387,7 +387,9 @@ void gfxSetFramebufferInfo(gfxScreen_t screen, u8 id)
                        enable3d ? (u32*)gfxTopRightFramebuffers[id] : (u32*)gfxTopLeftFramebuffers[id],
                        240 * 3,
                        ((1)<<8)|((1^bit5)<<6)|((bit5)<<5)|GSP_BGR8_OES);
-   } else {
+   }
+   else
+   {
       gspPresentBuffer(GFX_BOTTOM,
                        id,
                        (u32*)gfxBottomFramebuffers[id],
@@ -478,7 +480,7 @@ static void frontend_ctr_init(void* data)
 static int frontend_ctr_get_rating(void)
 {
    u8 device_model = 0xFF;
-   
+
    /*(0 = O3DS, 1 = O3DSXL, 2 = N3DS, 3 = 2DS, 4 = N3DSXL, 5 = N2DSXL)*/
    CFGU_GetSystemModel(&device_model);
 
@@ -590,7 +592,7 @@ static void frontend_ctr_get_os(char* s, size_t len, int* major, int* minor)
 static void frontend_ctr_get_name(char* s, size_t len)
 {
    u8 device_model = 0xFF;
-   
+
    /*(0 = O3DS, 1 = O3DSXL, 2 = N3DS, 3 = 2DS, 4 = N3DSXL, 5 = N2DSXL)*/
    CFGU_GetSystemModel(&device_model);
 

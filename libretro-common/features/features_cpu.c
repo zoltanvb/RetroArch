@@ -150,13 +150,6 @@ static int ra_clock_gettime(int clk_ik, struct timespec *t)
 
 #include <string.h>
 
-/**
- * cpu_features_get_perf_counter:
- *
- * Gets performance counter.
- *
- * @return Performance counter.
- **/
 retro_perf_tick_t cpu_features_get_perf_counter(void)
 {
    retro_perf_tick_t time_ticks = 0;
@@ -218,13 +211,6 @@ retro_perf_tick_t cpu_features_get_perf_counter(void)
    return time_ticks;
 }
 
-/**
- * cpu_features_get_time_usec:
- *
- * Gets time in microseconds.
- *
- * @return Time in microseconds.
- **/
 retro_time_t cpu_features_get_time_usec(void)
 {
 #if defined(_WIN32)
@@ -503,13 +489,6 @@ static void cpulist_read_from(CpuList* list, const char* filename)
 
 #endif
 
-/**
- * cpu_features_get_core_amount:
- *
- * Gets the amount of available CPU cores.
- *
- * @return Amount of CPU cores available.
- **/
 unsigned cpu_features_get_core_amount(void)
 {
 #if defined(_WIN32) && !defined(_XBOX)
@@ -609,13 +588,6 @@ unsigned cpu_features_get_core_amount(void)
 #define VENDOR_INTEL_c  0x6c65746e
 #define VENDOR_INTEL_d  0x49656e69
 
-/**
- * cpu_features_get:
- *
- * Gets CPU features..
- *
- * @return Bitmask of all CPU features available.
- **/
 uint64_t cpu_features_get(void)
 {
    uint64_t cpu        = 0;
@@ -694,7 +666,6 @@ uint64_t cpu_features_get(void)
    int flags[4];
    int vendor_shuffle[3];
    char vendor[13];
-   uint64_t cpu_flags  = 0;
    x86_cpuid(0, flags);
    vendor_shuffle[0] = flags[1];
    vendor_shuffle[1] = flags[3];
@@ -834,11 +805,12 @@ void cpu_features_get_model_name(char *name, int len)
 {
 #if defined(CPU_X86) && !defined(__MACH__)
    union {
-      int i[4];
-      unsigned char s[16];
+      int32_t i[4];
+      uint32_t u[4];
+      uint8_t s[16];
    } flags;
    int i, j;
-   size_t pos = 0;
+   int pos = 0;
    bool start = false;
 
    if (!name)
@@ -846,7 +818,8 @@ void cpu_features_get_model_name(char *name, int len)
 
    x86_cpuid(0x80000000, flags.i);
 
-   if (flags.i[0] < 0x80000004)
+   /* Check for additional cpuid attributes availability */
+   if (flags.u[0] < 0x80000004)
       return;
 
    for (i = 0; i < 3; i++)
@@ -854,7 +827,7 @@ void cpu_features_get_model_name(char *name, int len)
       memset(flags.i, 0, sizeof(flags.i));
       x86_cpuid(0x80000002 + i, flags.i);
 
-      for (j = 0; j < sizeof(flags.s); j++)
+      for (j = 0; j < (int)sizeof(flags.s); j++)
       {
          if (!start && flags.s[j] == ' ')
             continue;
@@ -873,7 +846,7 @@ void cpu_features_get_model_name(char *name, int len)
    }
 end:
    /* terminate our string */
-   if (pos < (size_t)len)
+   if (pos < len)
       name[pos] = '\0';
 #elif defined(__MACH__)
    if (!name)

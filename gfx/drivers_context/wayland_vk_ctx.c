@@ -55,16 +55,12 @@ static void xdg_toplevel_handle_configure(void *data,
       int32_t width, int32_t height, struct wl_array *states)
 {
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
+   if (wl->ignore_configuration &&
+       width == SPLASH_WINDOW_WIDTH &&
+       height == SPLASH_WINDOW_HEIGHT)
+      return;
    xdg_toplevel_handle_configure_common(wl, toplevel, width, height, states);
    wl->configured = false;
-}
-
-static void gfx_ctx_wl_get_video_size(void *data,
-      unsigned *width, unsigned *height)
-{
-   gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
-
-   gfx_ctx_wl_get_video_size_common(wl, width, height);
 }
 
 static void gfx_ctx_wl_destroy_resources(gfx_ctx_wayland_data_t *wl)
@@ -84,7 +80,7 @@ static void gfx_ctx_wl_check_window(void *data, bool *quit,
     * central place, so use that to trigger swapchain reinit. */
    *resize = wl->vk.flags & VK_DATA_FLAG_NEED_NEW_SWAPCHAIN;
 
-   gfx_ctx_wl_check_window_common(wl, gfx_ctx_wl_get_video_size, quit, resize, 
+   gfx_ctx_wl_check_window_common(wl, gfx_ctx_wl_get_video_size_common, quit, resize, 
       width, height);
 
 }
@@ -93,15 +89,19 @@ static bool gfx_ctx_wl_set_resize(void *data, unsigned width, unsigned height)
 {
    gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
 
+   wl->last_buffer_scale = wl->buffer_scale;
+   wl->last_fractional_scale_num = wl->fractional_scale_num;
+   if (!wl->fractional_scale)
+      wl_surface_set_buffer_scale(wl->surface, wl->buffer_scale);
+
    if (vulkan_create_swapchain(&wl->vk, width, height, wl->swap_interval))
    {
+      wl->ignore_configuration = false;
       wl->vk.context.flags |= VK_CTX_FLAG_INVALID_SWAPCHAIN;
       if (wl->vk.flags & VK_DATA_FLAG_CREATED_NEW_SWAPCHAIN)
          vulkan_acquire_next_image(&wl->vk);
 
       wl->vk.flags         &= ~VK_DATA_FLAG_NEED_NEW_SWAPCHAIN;
-
-      wl_surface_set_buffer_scale(wl->surface, wl->buffer_scale);
 
       return true;
    }
@@ -110,25 +110,19 @@ static bool gfx_ctx_wl_set_resize(void *data, unsigned width, unsigned height)
    return false;
 }
 
-static void gfx_ctx_wl_update_title(void *data)
-{
-   gfx_ctx_wayland_data_t *wl   = (gfx_ctx_wayland_data_t*)data;
-   gfx_ctx_wl_update_title_common(wl);
-}
-
-static bool gfx_ctx_wl_get_metrics(void *data,
-      enum display_metric_types type, float *value)
-{
-   gfx_ctx_wayland_data_t *wl = (gfx_ctx_wayland_data_t*)data;
-   return gfx_ctx_wl_get_metrics_common(wl, type, value);
-}
-
 #ifdef HAVE_LIBDECOR_H
+#include <libdecor.h>
 static void
 libdecor_frame_handle_configure(struct libdecor_frame *frame,
       struct libdecor_configuration *configuration, void *data)
 {
    gfx_ctx_wayland_data_t *wl   = (gfx_ctx_wayland_data_t*)data;
+   int width, height;
+   if (wl->ignore_configuration &&
+       wl->libdecor_configuration_get_content_size(configuration, frame, &width, &height) &&
+       width == SPLASH_WINDOW_WIDTH &&
+       height == SPLASH_WINDOW_HEIGHT)
+      return;
    libdecor_frame_handle_configure_common(frame, configuration, wl);
 
    wl->configured = false;
@@ -206,13 +200,13 @@ static bool gfx_ctx_wl_set_video_mode(void *data,
 {
    gfx_ctx_wayland_data_t *wl   = (gfx_ctx_wayland_data_t*)data;
 
-   if (!gfx_ctx_wl_set_video_mode_common_size(wl, width, height))
+   if (!gfx_ctx_wl_set_video_mode_common_size(wl, width, height, fullscreen))
       goto error;
 
    if (!vulkan_surface_create(&wl->vk, VULKAN_WSI_WAYLAND,
          wl->input.dpy, wl->surface,
-         wl->width  * wl->buffer_scale,
-         wl->height * wl->buffer_scale,
+         wl->buffer_width,
+         wl->buffer_height,
          wl->swap_interval))
       goto error;
 
@@ -258,9 +252,7 @@ static enum gfx_ctx_api gfx_ctx_wl_get_api(void *data)
 static bool gfx_ctx_wl_bind_api(void *data,
       enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
-   if (api == GFX_CTX_VULKAN_API)
-         return true;
-   return false;
+   return (api == GFX_CTX_VULKAN_API);
 }
 
 static void *gfx_ctx_wl_get_context_data(void *data)
@@ -287,11 +279,7 @@ static void gfx_ctx_wl_swap_buffers(void *data)
    flush_wayland_fd(&wl->input);
 }
 
-static gfx_ctx_proc_t gfx_ctx_wl_get_proc_address(const char *symbol)
-{
-   return NULL;
-}
-
+static gfx_ctx_proc_t gfx_ctx_wl_get_proc_address(const char *symbol) { return NULL; }
 static void gfx_ctx_wl_bind_hw_render(void *data, bool enable) { }
 
 static uint32_t gfx_ctx_wl_get_flags(void *data)
@@ -315,14 +303,14 @@ const gfx_ctx_driver_t gfx_ctx_vk_wayland = {
    gfx_ctx_wl_bind_api,
    gfx_ctx_wl_set_swap_interval,
    gfx_ctx_wl_set_video_mode,
-   gfx_ctx_wl_get_video_size,
+   gfx_ctx_wl_get_video_size_common,
    gfx_ctx_wl_get_refresh_rate,
    NULL, /* get_video_output_size */
    NULL, /* get_video_output_prev */
    NULL, /* get_video_output_next */
-   gfx_ctx_wl_get_metrics,
+   gfx_ctx_wl_get_metrics_common,
    NULL,
-   gfx_ctx_wl_update_title,
+   gfx_ctx_wl_update_title_common,
    gfx_ctx_wl_check_window,
    gfx_ctx_wl_set_resize,
    gfx_ctx_wl_has_focus,

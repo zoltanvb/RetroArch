@@ -20,7 +20,6 @@
 #include <compat/strl.h>
 #include <compat/posix_string.h>
 #include <file/file_path.h>
-#include <retro_assert.h>
 #include <streams/file_stream.h>
 #include <string/stdstring.h>
 
@@ -38,6 +37,7 @@
 #include "../../state_manager.h"
 #endif
 #include "../../core.h"
+#include "../../retroarch.h"
 #include "../../verbosity.h"
 
 #if defined(ORBIS)
@@ -94,9 +94,12 @@ struct shader_uniforms
    int input_size;
    int output_size;
    int texture_size;
+   int final_vp_size;
 
    int frame_count;
    int frame_direction;
+   /* Use int for maximal compatibility despite other drivers using uint. */
+   int rotation;
 
    int lut_texture[GFX_MAX_TEXTURES];
    unsigned frame_count_mod;
@@ -187,16 +190,16 @@ static GLint gl_glsl_get_uniform(glsl_shader_data_t *glsl,
    unsigned i;
    GLint loc;
    char buf[80];
-   strlcpy(buf, glsl->shader->prefix, sizeof(buf));
-   strlcat(buf, base, sizeof(buf));
+   size_t _len = strlcpy(buf, glsl->shader->prefix, sizeof(buf));
+   strlcpy(buf + _len, base, sizeof(buf) - _len);
    if ((loc = glGetUniformLocation(prog, buf)) >= 0)
       return loc;
 
    for (i = 0; i < ARRAY_SIZE(glsl_prefixes); i++)
    {
       buf[0] = '\0';
-      strlcpy(buf, glsl_prefixes[i], sizeof(buf));
-      strlcat(buf, base, sizeof(buf));
+      _len = strlcpy(buf, glsl_prefixes[i], sizeof(buf));
+      strlcpy(buf + _len, base, sizeof(buf) - _len);
       if ((loc = glGetUniformLocation(prog, buf)) >= 0)
          return loc;
    }
@@ -210,15 +213,15 @@ static GLint gl_glsl_get_attrib(glsl_shader_data_t *glsl,
    unsigned i;
    GLint loc;
    char buf[80];
-   strlcpy(buf, glsl->shader->prefix, sizeof(buf));
-   strlcat(buf, base, sizeof(buf));
+   size_t _len = strlcpy(buf, glsl->shader->prefix, sizeof(buf));
+   strlcpy(buf + _len, base, sizeof(buf) - _len);
    if ((loc = glGetUniformLocation(prog, buf)) >= 0)
       return loc;
 
    for (i = 0; i < ARRAY_SIZE(glsl_prefixes); i++)
    {
-      strlcpy(buf, glsl_prefixes[i], sizeof(buf));
-      strlcat(buf, base, sizeof(buf));
+      _len = strlcpy(buf, glsl_prefixes[i], sizeof(buf));
+      strlcpy(buf + _len, base, sizeof(buf) - _len);
       if ((loc = glGetAttribLocation(prog, buf)) >= 0)
          return loc;
    }
@@ -298,11 +301,11 @@ static bool gl_glsl_load_binary_shader(GLuint shader, char *save_path)
    GLint status;
    FILE *shader_binary = fopen(save_path, "rb" );
 
-   if(shader_binary)
+   if (shader_binary)
    {
       char *shader_data = NULL;
 
-      fseek (shader_binary, 0, SEEK_END);
+      fseek(shader_binary, 0, SEEK_END);
       shader_size=ftell (shader_binary);
       fseek(shader_binary, 0, SEEK_SET);
 
@@ -412,7 +415,7 @@ static bool gl_glsl_compile_shader(glsl_shader_data_t *glsl,
          gl_glsl_hash_shader(source, ARRAY_SIZE(source));
       snprintf(save_path, sizeof(save_path),
             "/data/retroarch/temp/%lx.sb", hash);
-      if(gl_glsl_load_binary_shader(shader, save_path))
+      if (gl_glsl_load_binary_shader(shader, save_path))
          return true;
    }
 #endif
@@ -425,7 +428,7 @@ static bool gl_glsl_compile_shader(glsl_shader_data_t *glsl,
 
 #if 0
 #if defined(ORBIS)
-   if(status == GL_TRUE)
+   if (status == GL_TRUE)
       gl_glsl_dump_shader(shader, save_path);
 #endif
 #endif
@@ -615,10 +618,6 @@ static bool gl_glsl_compile_programs(
 static void gl_glsl_reset_attrib(glsl_shader_data_t *glsl)
 {
    unsigned i;
-
-   /* Add sanity check that we did not overflow. */
-   retro_assert(glsl->attribs_index <= ARRAY_SIZE(glsl->attribs_elems));
-
    for (i = 0; i < glsl->attribs_index; i++)
       glDisableVertexAttribArray(glsl->attribs_elems[i]);
    glsl->attribs_index = 0;
@@ -631,8 +630,7 @@ static void gl_glsl_set_vbo(GLfloat **buffer, size_t *buffer_elems,
    {
       GLfloat *new_buffer = (GLfloat*)
          realloc(*buffer, elems * sizeof(GLfloat));
-      retro_assert(new_buffer);
-      *buffer = new_buffer;
+      *buffer             = new_buffer;
    }
 
    memcpy(*buffer, data, elems * sizeof(GLfloat));
@@ -686,28 +684,33 @@ static void gl_glsl_find_uniforms_frame(glsl_shader_data_t *glsl,
       GLuint prog,
       struct shader_uniforms_frame *frame, const char *base)
 {
-   char texture[64];
-   char texture_size[64];
-   char input_size[64];
-   char tex_coord[64];
-
-   strlcpy(texture,      base,          sizeof(texture));
-   strlcat(texture,      "Texture",     sizeof(texture));
-   strlcpy(texture_size, base,          sizeof(texture_size));
-   strlcat(texture_size, "TextureSize", sizeof(texture_size));
-   strlcpy(input_size,   base,          sizeof(input_size));
-   strlcat(input_size,   "InputSize",   sizeof(input_size));
-   strlcpy(tex_coord,    base,          sizeof(tex_coord));
-   strlcat(tex_coord,    "TexCoord",    sizeof(tex_coord));
+   char uni[64];
+   size_t _len = strlcpy(uni, base, sizeof(uni));
 
    if (frame->texture < 0)
-      frame->texture = gl_glsl_get_uniform(glsl, prog, texture);
-   if (frame->texture_size < 0)
-      frame->texture_size = gl_glsl_get_uniform(glsl, prog, texture_size);
-   if (frame->input_size < 0)
-      frame->input_size = gl_glsl_get_uniform(glsl, prog, input_size);
+   {
+      strlcpy(uni + _len, "Texture", sizeof(uni) - _len);
+      frame->texture = gl_glsl_get_uniform(glsl, prog, uni);
+   }
+
    if (frame->tex_coord < 0)
-      frame->tex_coord = gl_glsl_get_attrib(glsl, prog, tex_coord);
+   {
+      strlcpy(uni + _len, "TexCoord", sizeof(uni) - _len);
+      frame->tex_coord = gl_glsl_get_attrib(glsl, prog, uni);
+   }
+
+   if (frame->input_size < 0)
+   {
+      strlcpy(uni + _len, "InputSize",   sizeof(uni) - _len);
+      frame->input_size = gl_glsl_get_uniform(glsl, prog, uni);
+   }
+
+   if (frame->texture_size < 0)
+   {
+      strlcpy(uni + _len, "TextureSize", sizeof(uni) - _len);
+      frame->texture_size = gl_glsl_get_uniform(glsl, prog, uni);
+   }
+
 }
 
 static void gl_glsl_find_uniforms(glsl_shader_data_t *glsl,
@@ -733,9 +736,11 @@ static void gl_glsl_find_uniforms(glsl_shader_data_t *glsl,
    uni->input_size      = gl_glsl_get_uniform(glsl, prog, "InputSize");
    uni->output_size     = gl_glsl_get_uniform(glsl, prog, "OutputSize");
    uni->texture_size    = gl_glsl_get_uniform(glsl, prog, "TextureSize");
+   uni->final_vp_size   = gl_glsl_get_uniform(glsl, prog, "FinalViewportSize");
 
    uni->frame_count     = gl_glsl_get_uniform(glsl, prog, "FrameCount");
    uni->frame_direction = gl_glsl_get_uniform(glsl, prog, "FrameDirection");
+   uni->rotation        = gl_glsl_get_uniform(glsl, prog, "Rotation");
 
    for (i = 0; i < glsl->shader->luts; i++)
       uni->lut_texture[i] = glGetUniformLocation(prog, glsl->shader->lut[i].id);
@@ -1264,8 +1269,11 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
    unsigned i;
    GLfloat buffer[512];
    struct glsl_attrib attribs[32];
-   float input_size[2], output_size[2], texture_size[2];
+   float input_size[2], output_size[2], texture_size[2], final_vp_size[2];
    video_shader_ctx_params_t          *params = (video_shader_ctx_params_t*)dat;
+   gl2_t                             *gl_data = (gl2_t*)params->data;
+   unsigned vp_width                          = gl_data->vp_out_width;
+   unsigned vp_height                         = gl_data->vp_out_height;
    unsigned width                             = params->width;
    unsigned height                            = params->height;
    unsigned tex_width                         = params->tex_width;
@@ -1297,12 +1305,14 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
    if (glsl->prg[glsl->active_idx].id == 0)
       return;
 
-   input_size [0]  = (float)width;
-   input_size [1]  = (float)height;
-   output_size[0]  = (float)out_width;
-   output_size[1]  = (float)out_height;
-   texture_size[0] = (float)tex_width;
-   texture_size[1] = (float)tex_height;
+   input_size [0]   = (float)width;
+   input_size [1]   = (float)height;
+   output_size[0]   = (float)out_width;
+   output_size[1]   = (float)out_height;
+   texture_size[0]  = (float)tex_width;
+   texture_size[1]  = (float)tex_height;
+   final_vp_size[0] = (float)vp_width;
+   final_vp_size[1] = (float)vp_height;
 
    if (uni->input_size >= 0)
       glUniform2fv(uni->input_size, 1, input_size);
@@ -1312,6 +1322,9 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
 
    if (uni->texture_size >= 0)
       glUniform2fv(uni->texture_size, 1, texture_size);
+
+   if (uni->final_vp_size >= 0)
+      glUniform2fv(uni->final_vp_size, 1, final_vp_size);
 
    if (uni->frame_count >= 0 && glsl->active_idx)
    {
@@ -1332,6 +1345,9 @@ static void gl_glsl_set_params(void *dat, void *shader_data)
 #endif
          glUniform1i(uni->frame_direction, 1);
    }
+
+  if (uni->rotation >= 0)
+      glUniform1i(uni->rotation, retroarch_get_rotation());
 
    /* Set lookup textures. */
    for (i = 0; i < glsl->shader->luts; i++)
@@ -1592,7 +1608,8 @@ static bool gl_glsl_set_coords(void *shader_data,
    }
 
 #if defined(VITA)
-   if (uni->time >= 0) {
+   if (uni->time >= 0)
+   {
       float t = (sceKernelGetSystemTimeWide()) / (scePowerGetArmClockFrequency() * 1000.0);
       glUniform1f(uni->time, t);
    }

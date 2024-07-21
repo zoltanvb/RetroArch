@@ -30,6 +30,7 @@
 #include <dynamic/dylib.h>
 #endif
 #include <string/stdstring.h>
+#include <formats/image.h>
 
 #ifdef HAVE_THREADS
 #include "../video_thread_wrapper.h"
@@ -439,36 +440,6 @@ bool d3d9x_compile_shader(
    return false;
 }
 
-void d3d9x_font_draw_text(void *data, void *sprite_data, void *string_data,
-      unsigned count, void *rect_data, unsigned format, unsigned color)
-{
-#ifdef HAVE_D3DX
-   ID3DXFont *font = (ID3DXFont*)data;
-   if (font)
-      font->lpVtbl->DrawText(font, (LPD3DXSPRITE)sprite_data,
-            (LPCTSTR)string_data, count, (LPRECT)rect_data,
-            (DWORD)format, (D3DCOLOR)color);
-#endif
-}
-
-void d3d9x_font_release(void *data)
-{
-#ifdef HAVE_D3DX
-   ID3DXFont *font = (ID3DXFont*)data;
-   if (font)
-      font->lpVtbl->Release(font);
-#endif
-}
-
-void d3d9x_font_get_text_metrics(void *data, void *metrics)
-{
-#ifdef HAVE_D3DX
-   ID3DXFont *font = (ID3DXFont*)data;
-   if (font)
-      font->lpVtbl->GetTextMetrics(font, (TEXTMETRICA*)metrics);
-#endif
-}
-
 bool d3d9x_compile_shader_from_file(
       const char *src,
       const void *pdefines,
@@ -592,7 +563,7 @@ static void d3d9_get_video_size(d3d9_video_t *d3d,
 
    d3d->resolution_hd_enable    = false;
 
-   if(video_mode.fIsHiDef)
+   if (video_mode.fIsHiDef)
    {
       *width                    = 1280;
       *height                   = 720;
@@ -719,7 +690,6 @@ void d3d9_make_d3dpp(d3d9_video_t *d3d,
    d3dpp->MultiSampleQuality      = 0;
 #endif
 }
-
 
 void d3d9_log_info(const struct LinkInfo *info)
 {
@@ -872,10 +842,10 @@ static void d3d9_set_font_rect(
       d3d9_video_t *d3d,
       const struct font_params *params)
 {
-   settings_t *settings             = config_get_ptr();
-   float pos_x                      = settings->floats.video_msg_pos_x;
-   float pos_y                      = settings->floats.video_msg_pos_y;
-   float font_size                  = settings->floats.video_font_size;
+   settings_t *settings           = config_get_ptr();
+   float pos_x                    = settings->floats.video_msg_pos_x;
+   float pos_y                    = settings->floats.video_msg_pos_y;
+   float font_size                = settings->floats.video_font_size;
 
    if (params)
    {
@@ -1078,17 +1048,14 @@ void d3d9_apply_state_changes(void *data)
 
 void d3d9_set_osd_msg(void *data,
       const char *msg,
-      const void *params, void *font)
+      const struct font_params *params, void *font)
 {
    d3d9_video_t          *d3d = (d3d9_video_t*)data;
    LPDIRECT3DDEVICE9     dev  = d3d->dev;
-   const struct font_params *d3d_font_params = (const
-         struct font_params*)params;
 
-   d3d9_set_font_rect(d3d, d3d_font_params);
+   d3d9_set_font_rect(d3d, params);
    IDirect3DDevice9_BeginScene(dev);
-   font_driver_render_msg(d3d,
-         msg, d3d_font_params, font);
+   font_driver_render_msg(d3d, msg, params, font);
    IDirect3DDevice9_EndScene(dev);
 }
 
@@ -1102,9 +1069,9 @@ void d3d9_set_menu_texture_frame(void *data,
    if (!d3d || !d3d->menu)
       return;
 
-   if (    !d3d->menu->tex            ||
-            d3d->menu->tex_w != width ||
-            d3d->menu->tex_h != height)
+   if (       (!d3d->menu->tex)
+            || (d3d->menu->tex_w != width)
+            || (d3d->menu->tex_h != height))
    {
       IDirect3DTexture9_Release((LPDIRECT3DTEXTURE9)d3d->menu->tex);
 
@@ -1146,7 +1113,7 @@ void d3d9_set_menu_texture_frame(void *data,
          uint32_t       *dst = (uint32_t*)d3dlr.pBits;
          const uint16_t *src = (const uint16_t*)frame;
 
-         for (h = 0; h < height; h++, 
+         for (h = 0; h < height; h++,
                dst += d3dlr.Pitch >> 2,
                src += width)
          {
@@ -1196,17 +1163,15 @@ static void d3d9_video_texture_load_d3d(
    if (!ti)
       return;
 
-   if((info->type == TEXTURE_FILTER_MIPMAP_LINEAR) ||
-      (info->type == TEXTURE_FILTER_MIPMAP_NEAREST))
+   if (  (info->type == TEXTURE_FILTER_MIPMAP_LINEAR)
+      || (info->type == TEXTURE_FILTER_MIPMAP_NEAREST))
       want_mipmap        = true;
 
-   tex = (LPDIRECT3DTEXTURE9)d3d9_texture_new(d3d->dev,
+   if (!(tex = (LPDIRECT3DTEXTURE9)d3d9_texture_new(d3d->dev,
                ti->width, ti->height, 0,
                usage, D3D9_ARGB8888_FORMAT,
                D3DPOOL_MANAGED, 0, 0, 0,
-               NULL, NULL, want_mipmap);
-
-   if (!tex)
+               NULL, NULL, want_mipmap)))
       return;
 
    IDirect3DTexture9_LockRect(tex, 0, &d3dlr, NULL, D3DLOCK_NOSYSLOCK);
@@ -1247,7 +1212,7 @@ uintptr_t d3d9_load_texture(void *video_data, void *data,
 
 #ifdef HAVE_THREADS
    if (threaded)
-      return video_thread_texture_load(&info,
+      return video_thread_texture_handle(&info,
             d3d9_video_texture_load_wrap_d3d);
 #endif
 
@@ -1255,7 +1220,7 @@ uintptr_t d3d9_load_texture(void *video_data, void *data,
    return id;
 }
 
-void d3d9_unload_texture(void *data, 
+void d3d9_unload_texture(void *data,
       bool threaded, uintptr_t id)
 {
    LPDIRECT3DTEXTURE9 texid;
@@ -1301,11 +1266,11 @@ bool d3d9_read_viewport(void *data, uint8_t *buffer, bool is_idle)
    video_driver_get_size(&width, &height);
 
    if (
-         !d3d9_device_get_render_target(d3dr, 0, (void**)&target)     ||
-         !d3d9_device_create_offscreen_plain_surface(d3dr, width, height,
+            !d3d9_device_get_render_target(d3dr, 0, (void**)&target)
+         || !d3d9_device_create_offscreen_plain_surface(d3dr, width, height,
             D3D9_XRGB8888_FORMAT,
-            D3DPOOL_SYSTEMMEM, (void**)&dest, NULL) ||
-         !d3d9_device_get_render_target_data(d3dr, target, dest)
+            D3DPOOL_SYSTEMMEM, (void**)&dest, NULL)
+         || !d3d9_device_get_render_target_data(d3dr, target, dest)
          )
    {
       ret = false;
@@ -1352,75 +1317,35 @@ void d3d9_calculate_rect(d3d9_video_t *d3d,
 {
    float device_aspect   = (float)*width / *height;
    settings_t *settings  = config_get_ptr();
-   bool scale_integer    = settings->bools.video_scale_integer;
+   bool video_scale_integer    = settings->bools.video_scale_integer;
+   struct video_viewport vp;
 
    video_driver_get_size(width, height);
 
-   *x                   = 0;
-   *y                   = 0;
+   vp.x = 0;
+   vp.y = 0;
+   vp.width = *width;
+   vp.height = *height;
+   vp.full_width = *width;
+   vp.full_height = *height;
 
-   if (scale_integer && !force_full)
+   if (video_scale_integer && !force_full)
    {
-      struct video_viewport vp;
-
-      vp.x                        = 0;
-      vp.y                        = 0;
-      vp.width                    = 0;
-      vp.height                   = 0;
-      vp.full_width               = 0;
-      vp.full_height              = 0;
-
       video_viewport_get_scaled_integer(&vp,
             *width,
             *height,
             video_driver_get_aspect_ratio(),
-            d3d->keep_aspect);
-
-      *x                          = vp.x;
-      *y                          = vp.y;
-      *width                      = vp.width;
-      *height                     = vp.height;
+            d3d->keep_aspect,
+            true);
    }
    else if (d3d->keep_aspect && !force_full)
    {
-      float desired_aspect = video_driver_get_aspect_ratio();
-
-#if defined(HAVE_MENU)
-      if (settings->uints.video_aspect_ratio_idx == ASPECT_RATIO_CUSTOM)
-      {
-         video_viewport_t *custom = video_viewport_get_custom();
-
-         *x          = custom->x;
-         *y          = custom->y;
-         *width      = custom->width;
-         *height     = custom->height;
-      }
-      else
-#endif
-      {
-         float delta;
-
-         if (fabsf(device_aspect - desired_aspect) < 0.0001f)
-         {
-            /* If the aspect ratios of screen and desired aspect
-             * ratio are sufficiently equal (floating point stuff),
-             * assume they are actually equal.
-             */
-         }
-         else if (device_aspect > desired_aspect)
-         {
-            delta        = (desired_aspect / device_aspect - 1.0f) / 2.0f + 0.5f;
-            *x           = (int)(roundf(*width * (0.5f - delta)));
-            *width       = (unsigned)(roundf(2.0f * (*width) * delta));
-         }
-         else
-         {
-            delta        = (device_aspect / desired_aspect - 1.0f) / 2.0f + 0.5f;
-            *y           = (int)(roundf(*height * (0.5f - delta)));
-            *height      = (unsigned)(roundf(2.0f * (*height) * delta));
-         }
-      }
+      video_viewport_get_scaled_aspect(&vp, *width, *height, true);
    }
+   *x                          = vp.x;
+   *y                          = vp.y;
+   *width                      = vp.width;
+   *height                     = vp.height;
 }
 
 void d3d9_set_rotation(void *data, unsigned rot)
@@ -1613,7 +1538,6 @@ static const video_overlay_interface_t d3d9_overlay_interface = {
 void d3d9_get_overlay_interface(void *data,
       const video_overlay_interface_t **iface)
 {
-   (void)data;
    *iface = &d3d9_overlay_interface;
 }
 #endif

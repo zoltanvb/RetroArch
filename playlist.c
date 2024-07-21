@@ -15,14 +15,12 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
 #include <libretro.h>
 #include <boolean.h>
-#include <retro_assert.h>
 #include <retro_miscellaneous.h>
 #include <compat/posix_string.h>
 #include <string/stdstring.h>
@@ -49,14 +47,6 @@
 #define WINDOWS_PATH_DELIMITER '\\'
 #define POSIX_PATH_DELIMITER '/'
 
-#ifdef _WIN32
-#define LOCAL_FILE_SYSTEM_PATH_DELIMITER WINDOWS_PATH_DELIMITER
-#define USING_WINDOWS_FILE_SYSTEM
-#else
-#define LOCAL_FILE_SYSTEM_PATH_DELIMITER POSIX_PATH_DELIMITER
-#define USING_POSIX_FILE_SYSTEM
-#endif
-
 /* Holds all configuration parameters required
  * to repeat a manual content scan for a
  * previously manual-scan-generated playlist */
@@ -68,6 +58,7 @@ typedef struct
    bool search_recursively;
    bool search_archives;
    bool filter_dat_content;
+   bool overwrite_playlist;
 } playlist_manual_scan_record_t;
 
 struct content_playlist
@@ -84,6 +75,7 @@ struct content_playlist
    enum playlist_label_display_mode label_display_mode;
    enum playlist_thumbnail_mode right_thumbnail_mode;
    enum playlist_thumbnail_mode left_thumbnail_mode;
+   enum playlist_thumbnail_match_mode thumbnail_match_mode;
    enum playlist_sort_mode sort_mode;
 
    bool modified;
@@ -99,6 +91,7 @@ typedef struct
    unsigned *current_entry_uint_val;
    enum playlist_label_display_mode *current_meta_label_display_mode_val;
    enum playlist_thumbnail_mode *current_meta_thumbnail_mode_val;
+   enum playlist_thumbnail_match_mode *current_meta_thumbnail_match_mode_val;
    enum playlist_sort_mode *current_meta_sort_mode_val;
    bool *current_meta_bool_val;
    playlist_t *playlist;
@@ -119,7 +112,7 @@ typedef int (playlist_sort_fun_t)(
       const struct playlist_entry *a,
       const struct playlist_entry *b);
 
-/* TODO/FIXME - hack for allowing the explore view to switch 
+/* TODO/FIXME - hack for allowing the explore view to switch
  * over to a playlist item */
 void playlist_set_cached_external(playlist_t* pl)
 {
@@ -146,7 +139,7 @@ void playlist_config_set_path(playlist_config_t *config, const char *path)
 
 /* Convenience function: copies base content directory
  * path to specified playlist configuration object.
- * Also sets autofix_paths boolean, depending on base 
+ * Also sets autofix_paths boolean, depending on base
  * content directory value */
 void playlist_config_set_base_content_directory(
       playlist_config_t* config, const char* path)
@@ -196,30 +189,31 @@ playlist_config_t *playlist_get_config(playlist_t *playlist)
 }
 
 static void path_replace_base_path_and_convert_to_local_file_system(
-      char *out_path, const char *in_path,
-      const char *in_oldrefpath, const char *in_refpath,
+      char *out_path,
+      const char *in_path,
+      const char *in_oldrefpath,
+      const char *in_refpath,
       size_t size)
 {
    size_t in_oldrefpath_length = strlen(in_oldrefpath);
-   size_t in_refpath_length    = strlen(in_refpath);
 
    /* If entry path is inside playlist base path,
     * replace it with new base content directory */
    if (string_starts_with_size(in_path, in_oldrefpath, in_oldrefpath_length))
    {
+      size_t in_refpath_length = strlen(in_refpath);
       memcpy(out_path, in_refpath, in_refpath_length);
-      memcpy(out_path + in_refpath_length, in_path + in_oldrefpath_length,
+      memcpy(
+            out_path + in_refpath_length,
+            in_path  + in_oldrefpath_length,
             strlen(in_path) - in_oldrefpath_length + 1);
-
-#ifdef USING_WINDOWS_FILE_SYSTEM
+#ifdef _WIN32
       /* If we are running under a Windows filesystem,
-       * '/' characters are not allowed anywhere. 
+       * '/' characters are not allowed anywhere.
        * We replace with '\' and hope for the best... */
       string_replace_all_chars(out_path,
             POSIX_PATH_DELIMITER, WINDOWS_PATH_DELIMITER);
-#endif
-
-#ifdef USING_POSIX_FILE_SYSTEM
+#else
       /* Under POSIX filesystem, we replace '\' characters with '/' */
       string_replace_all_chars(out_path,
             WINDOWS_PATH_DELIMITER, POSIX_PATH_DELIMITER);
@@ -242,11 +236,8 @@ static uint32_t playlist_path_hash(const char *path)
 
 static void playlist_path_id_free(playlist_path_id_t *path_id)
 {
-   if (!path_id)
-      return;
-
-   if (path_id->archive_path &&
-       (path_id->archive_path != path_id->real_path))
+   if (   (path_id->archive_path)
+       && (path_id->archive_path != path_id->real_path))
       free(path_id->archive_path);
 
    if (path_id->real_path)
@@ -257,53 +248,53 @@ static void playlist_path_id_free(playlist_path_id_t *path_id)
 
 static playlist_path_id_t *playlist_path_id_init(const char *path)
 {
-   playlist_path_id_t *path_id = (playlist_path_id_t*)malloc(sizeof(*path_id));
-   const char *archive_delim   = NULL;
-   char real_path[PATH_MAX_LENGTH];
+   playlist_path_id_t *path_id  = (playlist_path_id_t*)malloc(sizeof(*path_id));
 
    if (!path_id)
       return NULL;
 
-   path_id->real_path         = NULL;
-   path_id->archive_path      = NULL;
-   path_id->real_path_hash    = 0;
-   path_id->archive_path_hash = 0;
-   path_id->is_archive        = false;
-   path_id->is_in_archive     = false;
+   path_id->real_path           = NULL;
+   path_id->archive_path        = NULL;
+   path_id->real_path_hash      = 0;
+   path_id->archive_path_hash   = 0;
+   path_id->is_archive          = false;
+   path_id->is_in_archive       = false;
 
-   if (string_is_empty(path))
-      return path_id;
-
-   /* Get real path */
-   strlcpy(real_path, path, sizeof(real_path));
-   playlist_resolve_path(PLAYLIST_SAVE, false, real_path,
-         sizeof(real_path));
-
-   path_id->real_path      = strdup(real_path);
-   path_id->real_path_hash = playlist_path_hash(real_path);
-
-   /* Check archive status */
-   path_id->is_archive     = path_is_compressed_file(real_path);
-   archive_delim           = path_get_archive_delim(real_path);
-
-   /* If path refers to a file inside an archive,
-    * extract the path of the parent archive */
-   if (archive_delim)
+   if (!string_is_empty(path))
    {
-      char archive_path[PATH_MAX_LENGTH];
-      size_t len                         = (1 + archive_delim - real_path);
-      if (len >= PATH_MAX_LENGTH)
-         len                             = PATH_MAX_LENGTH;
-      strlcpy(archive_path, real_path, len * sizeof(char));
+      char real_path[PATH_MAX_LENGTH];
+      const char *archive_delim = NULL;
+      /* Get real path */
+      strlcpy(real_path, path, sizeof(real_path));
+      playlist_resolve_path(PLAYLIST_SAVE, false, real_path,
+            sizeof(real_path));
 
-      path_id->archive_path              = strdup(archive_path);
-      path_id->archive_path_hash         = playlist_path_hash(archive_path);
-      path_id->is_in_archive             = true;
-   }
-   else if (path_id->is_archive)
-   {
-      path_id->archive_path              = path_id->real_path;
-      path_id->archive_path_hash         = path_id->real_path_hash;
+      path_id->real_path      = strdup(real_path);
+      path_id->real_path_hash = playlist_path_hash(real_path);
+
+      /* Check archive status */
+      path_id->is_archive     = path_is_compressed_file(real_path);
+      archive_delim           = path_get_archive_delim(real_path);
+
+      /* If path refers to a file inside an archive,
+       * extract the path of the parent archive */
+      if (archive_delim)
+      {
+         char archive_path[PATH_MAX_LENGTH];
+         size_t len                  = (1 + archive_delim - real_path);
+         if (len >= PATH_MAX_LENGTH)
+            len                      = PATH_MAX_LENGTH;
+         strlcpy(archive_path, real_path, len * sizeof(char));
+
+         path_id->archive_path       = strdup(archive_path);
+         path_id->archive_path_hash  = playlist_path_hash(archive_path);
+         path_id->is_in_archive      = true;
+      }
+      else if (path_id->is_archive)
+      {
+         path_id->archive_path       = path_id->real_path;
+         path_id->archive_path_hash  = path_id->real_path_hash;
+      }
    }
 
    return path_id;
@@ -326,13 +317,14 @@ static bool playlist_path_equal(const char *real_path,
    char entry_real_path[PATH_MAX_LENGTH];
 
    /* Sanity check */
-   if (string_is_empty(real_path)  ||
-       string_is_empty(entry_path) ||
-       !config)
+   if (   string_is_empty(real_path)
+       || string_is_empty(entry_path)
+       || !config)
       return false;
 
    /* Get entry 'real' path */
    strlcpy(entry_real_path, entry_path, sizeof(entry_real_path));
+   playlist_resolve_path(PLAYLIST_LOAD, false, entry_real_path, sizeof(entry_real_path));
    path_resolve_realpath(entry_real_path, sizeof(entry_real_path), true);
 
    if (string_is_empty(entry_real_path))
@@ -371,8 +363,8 @@ static bool playlist_path_equal(const char *real_path,
    real_path_is_compressed       = path_is_compressed_file(real_path);
    entry_real_path_is_compressed = path_is_compressed_file(entry_real_path);
 
-   if ((real_path_is_compressed  && !entry_real_path_is_compressed) ||
-       (!real_path_is_compressed && entry_real_path_is_compressed))
+   if (   (real_path_is_compressed  && !entry_real_path_is_compressed)
+       || (!real_path_is_compressed &&  entry_real_path_is_compressed))
    {
       const char *compressed_path_a  = real_path_is_compressed ? real_path       : entry_real_path;
       const char *full_path          = real_path_is_compressed ? entry_real_path : real_path;
@@ -414,27 +406,23 @@ static bool playlist_path_matches_entry(playlist_path_id_t *path_id,
       struct playlist_entry *entry, const playlist_config_t *config)
 {
    /* Sanity check */
-   if (!path_id ||
-       !entry ||
-       !config)
+   if (!path_id || !entry || !config)
       return false;
 
    /* Check whether entry contains a path ID cache */
    if (!entry->path_id)
    {
-      entry->path_id = playlist_path_id_init(entry->path);
-      if (!entry->path_id)
+      if (!(entry->path_id = playlist_path_id_init(entry->path)))
          return false;
    }
 
    /* Ensure we have valid real_path strings */
-   if (string_is_empty(path_id->real_path) ||
-       string_is_empty(entry->path_id->real_path))
+   if (   string_is_empty(path_id->real_path)
+       || string_is_empty(entry->path_id->real_path))
       return false;
 
    /* First pass comparison */
-   if (path_id->real_path_hash ==
-         entry->path_id->real_path_hash)
+   if (path_id->real_path_hash == entry->path_id->real_path_hash)
    {
 #ifdef _WIN32
       /* Handle case-insensitive operating systems*/
@@ -468,17 +456,16 @@ static bool playlist_path_matches_entry(playlist_path_id_t *path_id,
     * loads an archive file via the command line or some
     * external launcher (where the [delimiter][rom_file]
     * part is almost always omitted) */
-   if (((path_id->is_archive        && !path_id->is_in_archive)        && entry->path_id->is_in_archive) ||
-       ((entry->path_id->is_archive && !entry->path_id->is_in_archive) && path_id->is_in_archive))
+   if (   ((path_id->is_archive        && !path_id->is_in_archive)        && entry->path_id->is_in_archive)
+       || ((entry->path_id->is_archive && !entry->path_id->is_in_archive) && path_id->is_in_archive))
    {
       /* Ensure we have valid parent archive path
        * strings */
-      if (string_is_empty(path_id->archive_path) ||
-          string_is_empty(entry->path_id->archive_path))
+      if (   string_is_empty(path_id->archive_path)
+          || string_is_empty(entry->path_id->archive_path))
          return false;
 
-      if (path_id->archive_path_hash ==
-            entry->path_id->archive_path_hash)
+      if (path_id->archive_path_hash == entry->path_id->archive_path_hash)
       {
 #ifdef _WIN32
          /* Handle case-insensitive operating systems*/
@@ -511,13 +498,14 @@ static bool playlist_core_path_equal(const char *real_core_path, const char *ent
    char entry_real_core_path[PATH_MAX_LENGTH];
 
    /* Sanity check */
-   if (string_is_empty(real_core_path) || string_is_empty(entry_core_path))
+   if (     string_is_empty(real_core_path)
+         || string_is_empty(entry_core_path))
       return false;
 
    /* Get entry 'real' core path */
    strlcpy(entry_real_core_path, entry_core_path, sizeof(entry_real_core_path));
-   if (!string_is_equal(entry_real_core_path, FILE_PATH_DETECT) &&
-       !string_is_equal(entry_real_core_path, FILE_PATH_BUILTIN))
+   if (   !string_is_equal(entry_real_core_path, FILE_PATH_DETECT)
+       && !string_is_equal(entry_real_core_path, FILE_PATH_BUILTIN))
       playlist_resolve_path(PLAYLIST_SAVE, true, entry_real_core_path,
             sizeof(entry_real_core_path));
 
@@ -533,8 +521,8 @@ static bool playlist_core_path_equal(const char *real_core_path, const char *ent
       return true;
 #endif
 
-   if (config->autofix_paths &&
-       core_info_core_file_id_is_equal(real_core_path, entry_core_path))
+   if (   config->autofix_paths
+       && core_info_core_file_id_is_equal(real_core_path, entry_core_path))
       return true;
 
    return false;
@@ -963,8 +951,8 @@ bool playlist_push_runtime(playlist_t *playlist,
 
    /* Get 'real' core path */
    strlcpy(real_core_path, entry->core_path, sizeof(real_core_path));
-   if (!string_is_equal(real_core_path, FILE_PATH_DETECT) &&
-       !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
+   if (   !string_is_equal(real_core_path, FILE_PATH_DETECT)
+       && !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
       playlist_resolve_path(PLAYLIST_SAVE, true, real_core_path,
              sizeof(real_core_path));
 
@@ -978,8 +966,8 @@ bool playlist_push_runtime(playlist_t *playlist,
    for (i = 0; i < len; i++)
    {
       struct playlist_entry tmp;
-      bool equal_path  = (string_is_empty(path_id->real_path) &&
-            string_is_empty(playlist->entries[i].path));
+      bool equal_path  = (string_is_empty(path_id->real_path)
+            && string_is_empty(playlist->entries[i].path));
 
       equal_path       = equal_path || playlist_path_matches_entry(
             path_id, &playlist->entries[i], &playlist->config);
@@ -1028,25 +1016,25 @@ bool playlist_push_runtime(playlist_t *playlist,
       memmove(playlist->entries + 1, playlist->entries,
             len * sizeof(struct playlist_entry));
 
-      playlist->entries[0].path            = NULL;
-      playlist->entries[0].core_path       = NULL;
+      playlist->entries[0].path               = NULL;
+      playlist->entries[0].core_path          = NULL;
 
       if (!string_is_empty(path_id->real_path))
-         playlist->entries[0].path         = strdup(path_id->real_path);
-      playlist->entries[0].path_id         = path_id;
-      path_id                              = NULL;
+         playlist->entries[0].path            = strdup(path_id->real_path);
+      playlist->entries[0].path_id            = path_id;
+      path_id                                 = NULL;
 
       if (!string_is_empty(real_core_path))
-         playlist->entries[0].core_path    = strdup(real_core_path);
+         playlist->entries[0].core_path       = strdup(real_core_path);
 
-      playlist->entries[0].runtime_status = entry->runtime_status;
-      playlist->entries[0].runtime_hours = entry->runtime_hours;
-      playlist->entries[0].runtime_minutes = entry->runtime_minutes;
-      playlist->entries[0].runtime_seconds = entry->runtime_seconds;
-      playlist->entries[0].last_played_year = entry->last_played_year;
-      playlist->entries[0].last_played_month = entry->last_played_month;
-      playlist->entries[0].last_played_day = entry->last_played_day;
-      playlist->entries[0].last_played_hour = entry->last_played_hour;
+      playlist->entries[0].runtime_status     = entry->runtime_status;
+      playlist->entries[0].runtime_hours      = entry->runtime_hours;
+      playlist->entries[0].runtime_minutes    = entry->runtime_minutes;
+      playlist->entries[0].runtime_seconds    = entry->runtime_seconds;
+      playlist->entries[0].last_played_year   = entry->last_played_year;
+      playlist->entries[0].last_played_month  = entry->last_played_month;
+      playlist->entries[0].last_played_day    = entry->last_played_day;
+      playlist->entries[0].last_played_hour   = entry->last_played_hour;
       playlist->entries[0].last_played_minute = entry->last_played_minute;
       playlist->entries[0].last_played_second = entry->last_played_second;
 
@@ -1071,6 +1059,53 @@ error:
    return false;
 }
 
+void playlist_update_thumbnail_name_flag(playlist_t *playlist, size_t idx,
+      enum playlist_thumbnail_name_flags thumbnail_flags)
+{
+   struct playlist_entry *entry = NULL;
+
+   if (!playlist || idx >= RBUF_LEN(playlist->entries))
+      return;
+
+   entry                   = &playlist->entries[idx];
+   entry->thumbnail_flags |= thumbnail_flags;
+}
+
+enum playlist_thumbnail_name_flags playlist_get_curr_thumbnail_name_flag(playlist_t *playlist, size_t idx)
+{
+   struct playlist_entry *entry = NULL;
+
+   if (!playlist || idx >= RBUF_LEN(playlist->entries))
+      return    PLAYLIST_THUMBNAIL_FLAG_NONE;
+
+   entry = &playlist->entries[idx];
+   return entry->thumbnail_flags;
+}
+
+
+enum playlist_thumbnail_name_flags playlist_get_next_thumbnail_name_flag(playlist_t *playlist, size_t idx)
+{
+   struct playlist_entry *entry = NULL;
+
+   if (!playlist || idx >= RBUF_LEN(playlist->entries))
+      return    PLAYLIST_THUMBNAIL_FLAG_NONE;
+   entry = &playlist->entries[idx];
+
+   if (entry->thumbnail_flags & PLAYLIST_THUMBNAIL_FLAG_SHORT_NAME)
+            return PLAYLIST_THUMBNAIL_FLAG_NONE;
+   if (entry->thumbnail_flags & PLAYLIST_THUMBNAIL_FLAG_STD_NAME)
+            return PLAYLIST_THUMBNAIL_FLAG_SHORT_NAME;
+   if (entry->thumbnail_flags & PLAYLIST_THUMBNAIL_FLAG_FULL_NAME)
+            return PLAYLIST_THUMBNAIL_FLAG_STD_NAME;
+   /* Special case: only one entry in playlist, only one query is possible
+    * as flag swapping relies on going back and forth among entries
+    * so just use the most likely version here */
+   if (idx == 0 && RBUF_LEN(playlist->entries) == 1)
+            return PLAYLIST_THUMBNAIL_FLAG_STD_NAME;
+   return PLAYLIST_THUMBNAIL_FLAG_FULL_NAME;
+}
+
+
 /**
  * playlist_resolve_path:
  * @mode      : PLAYLIST_LOAD or PLAYLIST_SAVE
@@ -1092,8 +1127,35 @@ void playlist_resolve_path(enum playlist_file_mode mode,
 
    if (mode == PLAYLIST_LOAD)
    {
-      fill_pathname_expand_special(tmp, path, sizeof(tmp));
-      strlcpy(path, tmp, len);
+      if (is_core &&
+          string_starts_with(path, ":/modules/") &&
+          string_ends_with(path, ".dylib"))
+      {
+         /* iOS cores used to be packaged as .dylib files in the modules
+          * directory; App Store rules require turning them into Frameworks and
+          * putting them in the Frameworks directory. Because some playlists
+          * include the old core path, we'll translate it here.
+          */
+         path[string_index_last_occurance(path, '.')] = '\0';
+         if (string_ends_with(path, "_ios"))
+            path[string_index_last_occurance(path, '_')] = '\0';
+         strlcpy(tmp, ":/Frameworks/", STRLEN_CONST(":/Frameworks/") + 1);
+         strlcpy(tmp + STRLEN_CONST(":/Frameworks/"), path + STRLEN_CONST(":/modules/"), sizeof(tmp) - STRLEN_CONST(":/Frameworks/"));
+         /* iOS framework names, to quote Apple:
+          * "must contain only alphanumerics, dots, hyphens and must not end with a dot."
+          *
+          * Since core names include underscore, which is not allowed, but not dot,
+          * which is, we change underscore to dot.
+          */
+         string_replace_all_chars(tmp, '_', '.');
+         strlcat(tmp, ".framework", sizeof(tmp));
+         fill_pathname_expand_special(path, tmp, len);
+      }
+      else
+      {
+         fill_pathname_expand_special(tmp, path, sizeof(tmp));
+         strlcpy(path, tmp, len);
+      }
    }
    else
    {
@@ -1210,7 +1272,7 @@ bool playlist_content_path_is_valid(const char *path)
 
 /**
  * playlist_push:
- * @playlist        	   : Playlist handle.
+ * @playlist           : Playlist handle.
  *
  * Push entry to top of playlist.
  **/
@@ -1238,8 +1300,8 @@ bool playlist_push(playlist_t *playlist,
 
    /* Get 'real' core path */
    strlcpy(real_core_path, entry->core_path, sizeof(real_core_path));
-   if (!string_is_equal(real_core_path, FILE_PATH_DETECT) &&
-       !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
+   if (   !string_is_equal(real_core_path, FILE_PATH_DETECT)
+       && !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
       playlist_resolve_path(PLAYLIST_SAVE, true, real_core_path,
              sizeof(real_core_path));
 
@@ -1268,8 +1330,8 @@ bool playlist_push(playlist_t *playlist,
    for (i = 0; i < len; i++)
    {
       struct playlist_entry tmp;
-      bool equal_path  = (string_is_empty(path_id->real_path) &&
-            string_is_empty(playlist->entries[i].path));
+      bool equal_path  = (string_is_empty(path_id->real_path)
+                       && string_is_empty(playlist->entries[i].path));
 
       equal_path       = equal_path || playlist_path_matches_entry(
             path_id, &playlist->entries[i], &playlist->config);
@@ -1351,17 +1413,20 @@ bool playlist_push(playlist_t *playlist,
        * or command line, certain entry values will be missing.
        * If we are now loading the same content from a playlist,
        * fill in any blanks */
-      if (!playlist->entries[i].label && !string_is_empty(entry->label))
+      if (     !playlist->entries[i].label
+            && !string_is_empty(entry->label))
       {
          playlist->entries[i].label       = strdup(entry->label);
          entry_updated                    = true;
       }
-      if (!playlist->entries[i].crc32 && !string_is_empty(entry->crc32))
+      if (     !playlist->entries[i].crc32
+            && !string_is_empty(entry->crc32))
       {
          playlist->entries[i].crc32       = strdup(entry->crc32);
          entry_updated                    = true;
       }
-      if (!playlist->entries[i].db_name && !string_is_empty(entry->db_name))
+      if (     !playlist->entries[i].db_name
+            && !string_is_empty(entry->db_name))
       {
          playlist->entries[i].db_name     = strdup(entry->db_name);
          entry_updated                    = true;
@@ -1783,6 +1848,14 @@ void playlist_write_file(playlist_t *playlist)
       rjsonwriter_raw(writer, "\n", 1);
 
       rjsonwriter_add_spaces(writer, 2);
+      rjsonwriter_add_string(writer, "thumbnail_match_mode");
+      rjsonwriter_raw(writer, ":", 1);
+      rjsonwriter_raw(writer, " ", 1);
+      rjsonwriter_rawf(writer, "%d", (int)playlist->thumbnail_match_mode);
+      rjsonwriter_raw(writer, ",", 1);
+      rjsonwriter_raw(writer, "\n", 1);
+
+      rjsonwriter_add_spaces(writer, 2);
       rjsonwriter_add_string(writer, "sort_mode");
       rjsonwriter_raw(writer, ":", 1);
       rjsonwriter_raw(writer, " ", 1);
@@ -1844,6 +1917,17 @@ void playlist_write_file(playlist_t *playlist)
          rjsonwriter_raw(writer, " ", 1);
          {
             bool value = playlist->scan_record.filter_dat_content;
+            rjsonwriter_raw(writer, (value ? "true" : "false"), (value ? 4 : 5));
+         }
+         rjsonwriter_raw(writer, ",", 1);
+         rjsonwriter_raw(writer, "\n", 1);
+
+         rjsonwriter_add_spaces(writer, 2);
+         rjsonwriter_add_string(writer, "scan_overwrite_playlist");
+         rjsonwriter_raw(writer, ":", 1);
+         rjsonwriter_raw(writer, " ", 1);
+         {
+            bool value = playlist->scan_record.overwrite_playlist;
             rjsonwriter_raw(writer, (value ? "true" : "false"), (value ? 4 : 5));
          }
          rjsonwriter_raw(writer, ",", 1);
@@ -2066,7 +2150,7 @@ void playlist_free(playlist_t *playlist)
 
 /**
  * playlist_clear:
- * @playlist        	   : Playlist handle.
+ * @playlist           : Playlist handle.
  *
  * Clears all playlist entries in playlist.
  **/
@@ -2088,7 +2172,7 @@ void playlist_clear(playlist_t *playlist)
 
 /**
  * playlist_size:
- * @playlist        	   : Playlist handle.
+ * @playlist           : Playlist handle.
  *
  * Gets size of playlist.
  * Returns: size of playlist.
@@ -2102,7 +2186,7 @@ size_t playlist_size(playlist_t *playlist)
 
 /**
  * playlist_capacity:
- * @playlist        	   : Playlist handle.
+ * @playlist           : Playlist handle.
  *
  * Gets maximum capacity of playlist.
  * Returns: maximum capacity of playlist.
@@ -2127,13 +2211,15 @@ static bool JSONEndArrayHandler(void *context)
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   retro_assert(pCtx->array_depth > 0);
-
    pCtx->array_depth--;
 
-   if (pCtx->in_items && pCtx->array_depth == 0 && pCtx->object_depth <= 1)
+   if (     pCtx->in_items
+         && (pCtx->array_depth  == 0)
+         && (pCtx->object_depth <= 1))
       pCtx->in_items = false;
-   else if (pCtx->in_subsystem_roms && pCtx->array_depth <= 1 && pCtx->object_depth <= 2)
+   else if (pCtx->in_subsystem_roms
+         && (pCtx->array_depth  <= 1)
+         && (pCtx->object_depth <= 2))
       pCtx->in_subsystem_roms = false;
 
    return true;
@@ -2145,9 +2231,12 @@ static bool JSONStartObjectHandler(void *context)
 
    pCtx->object_depth++;
 
-   if (pCtx->in_items && pCtx->object_depth == 2)
+   if (      pCtx->in_items
+         && (pCtx->object_depth == 2))
    {
-      if ((pCtx->array_depth == 1) && !pCtx->capacity_exceeded)
+      if (
+            (pCtx->array_depth == 1)
+         && !pCtx->capacity_exceeded)
       {
          size_t len = RBUF_LEN(pCtx->playlist->entries);
          if (len < pCtx->playlist->config.capacity)
@@ -2186,14 +2275,14 @@ static bool JSONEndObjectHandler(void *context)
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   if (pCtx->in_items && pCtx->object_depth == 2)
+   if (     pCtx->in_items
+         && pCtx->object_depth == 2)
    {
-      if ((pCtx->array_depth == 1) && !pCtx->capacity_exceeded)
+      if (     (pCtx->array_depth == 1)
+            && !pCtx->capacity_exceeded)
          RBUF_RESIZE(pCtx->playlist->entries,
                RBUF_LEN(pCtx->playlist->entries) + 1);
    }
-
-   retro_assert(pCtx->object_depth > 0);
 
    pCtx->object_depth--;
 
@@ -2204,7 +2293,10 @@ static bool JSONStringHandler(void *context, const char *pValue, size_t length)
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   if (pCtx->in_items && pCtx->in_subsystem_roms && pCtx->object_depth == 2 && pCtx->array_depth == 2)
+   if (     pCtx->in_items
+         && pCtx->in_subsystem_roms
+         && (pCtx->object_depth == 2)
+         && (pCtx->array_depth  == 2))
    {
       if (length && !string_is_empty(pValue))
       {
@@ -2216,11 +2308,14 @@ static bool JSONStringHandler(void *context, const char *pValue, size_t length)
          string_list_append(pCtx->current_entry->subsystem_roms, pValue, attr);
       }
    }
-   else if (pCtx->in_items && pCtx->object_depth == 2)
+   else if ((pCtx->in_items)
+         && (pCtx->object_depth == 2))
    {
       if (pCtx->array_depth == 1)
       {
-         if (pCtx->current_string_val && length && !string_is_empty(pValue))
+         if (     pCtx->current_string_val
+               && length
+               && !string_is_empty(pValue))
          {
             if (*pCtx->current_string_val)
                 free(*pCtx->current_string_val);
@@ -2232,7 +2327,9 @@ static bool JSONStringHandler(void *context, const char *pValue, size_t length)
    {
       if (pCtx->array_depth == 0)
       {
-         if (pCtx->current_string_val && length && !string_is_empty(pValue))
+         if (     pCtx->current_string_val
+               && length
+               && !string_is_empty(pValue))
          {
             /* handle any top-level playlist metadata here */
             if (*pCtx->current_string_val)
@@ -2251,9 +2348,12 @@ static bool JSONNumberHandler(void *context, const char *pValue, size_t length)
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   if (pCtx->in_items && pCtx->object_depth == 2)
+   if (     pCtx->in_items
+         && (pCtx->object_depth == 2))
    {
-      if (pCtx->array_depth == 1 && length && !string_is_empty(pValue))
+      if (    (pCtx->array_depth == 1)
+            && length
+            && !string_is_empty(pValue))
       {
          if (pCtx->current_entry_uint_val)
             *pCtx->current_entry_uint_val = (unsigned)strtoul(pValue, NULL, 10);
@@ -2267,19 +2367,22 @@ static bool JSONNumberHandler(void *context, const char *pValue, size_t length)
          {
             /* handle any top-level playlist metadata here */
             if (pCtx->current_meta_label_display_mode_val)
-               *pCtx->current_meta_label_display_mode_val = (enum playlist_label_display_mode)strtoul(pValue, NULL, 10);
+               *pCtx->current_meta_label_display_mode_val   = (enum playlist_label_display_mode)strtoul(pValue, NULL, 10);
             else if (pCtx->current_meta_thumbnail_mode_val)
-               *pCtx->current_meta_thumbnail_mode_val = (enum playlist_thumbnail_mode)strtoul(pValue, NULL, 10);
+               *pCtx->current_meta_thumbnail_mode_val       = (enum playlist_thumbnail_mode)strtoul(pValue, NULL, 10);
+            else if (pCtx->current_meta_thumbnail_match_mode_val)
+               *pCtx->current_meta_thumbnail_match_mode_val = (enum playlist_thumbnail_match_mode)strtoul(pValue, NULL, 10);
             else if (pCtx->current_meta_sort_mode_val)
-               *pCtx->current_meta_sort_mode_val = (enum playlist_sort_mode)strtoul(pValue, NULL, 10);
+               *pCtx->current_meta_sort_mode_val            = (enum playlist_sort_mode)strtoul(pValue, NULL, 10);
          }
       }
    }
 
-   pCtx->current_entry_uint_val              = NULL;
-   pCtx->current_meta_label_display_mode_val = NULL;
-   pCtx->current_meta_thumbnail_mode_val     = NULL;
-   pCtx->current_meta_sort_mode_val          = NULL;
+   pCtx->current_entry_uint_val                = NULL;
+   pCtx->current_meta_label_display_mode_val   = NULL;
+   pCtx->current_meta_thumbnail_mode_val       = NULL;
+   pCtx->current_meta_thumbnail_match_mode_val = NULL;
+   pCtx->current_meta_sort_mode_val            = NULL;
 
    return true;
 }
@@ -2288,10 +2391,10 @@ static bool JSONBoolHandler(void *context, bool value)
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   if (!pCtx->in_items &&
-       (pCtx->object_depth == 1) &&
-       (pCtx->array_depth == 0) &&
-       pCtx->current_meta_bool_val)
+   if (   !pCtx->in_items
+       && (pCtx->object_depth == 1)
+       && (pCtx->array_depth  == 0)
+       && pCtx->current_meta_bool_val)
       *pCtx->current_meta_bool_val = value;
 
    pCtx->current_meta_bool_val = NULL;
@@ -2303,15 +2406,14 @@ static bool JSONObjectMemberHandler(void *context, const char *pValue, size_t le
 {
    JSONContext *pCtx = (JSONContext *)context;
 
-   if (pCtx->in_items && pCtx->object_depth == 2)
+   if (     pCtx->in_items
+         && (pCtx->object_depth == 2))
    {
       if (pCtx->array_depth == 1)
       {
+         /* Something went wrong */
          if (pCtx->current_string_val)
-         {
-            /* something went wrong */
             return false;
-         }
 
          if (length && !pCtx->capacity_exceeded)
          {
@@ -2376,14 +2478,17 @@ static bool JSONObjectMemberHandler(void *context, const char *pValue, size_t le
          }
       }
    }
-   else if (pCtx->object_depth == 1 && pCtx->array_depth == 0 && length)
+   else if ((pCtx->object_depth == 1)
+         && (pCtx->array_depth  == 0)
+         && length)
    {
-      pCtx->current_string_val                  = NULL;
-      pCtx->current_meta_label_display_mode_val = NULL;
-      pCtx->current_meta_thumbnail_mode_val     = NULL;
-      pCtx->current_meta_sort_mode_val          = NULL;
-      pCtx->current_meta_bool_val               = NULL;
-      pCtx->in_items                            = false;
+      pCtx->current_string_val                    = NULL;
+      pCtx->current_meta_label_display_mode_val   = NULL;
+      pCtx->current_meta_thumbnail_mode_val       = NULL;
+      pCtx->current_meta_thumbnail_match_mode_val = NULL;
+      pCtx->current_meta_sort_mode_val            = NULL;
+      pCtx->current_meta_bool_val                 = NULL;
+      pCtx->in_items                              = false;
 
       switch (pValue[0])
       {
@@ -2424,9 +2529,15 @@ static bool JSONObjectMemberHandler(void *context, const char *pValue, size_t le
                pCtx->current_meta_bool_val      = &pCtx->playlist->scan_record.search_archives;
             else if (string_is_equal(pValue, "scan_filter_dat_content"))
                pCtx->current_meta_bool_val      = &pCtx->playlist->scan_record.filter_dat_content;
+            else if (string_is_equal(pValue, "scan_overwrite_playlist"))
+               pCtx->current_meta_bool_val      = &pCtx->playlist->scan_record.overwrite_playlist;
             else if (string_is_equal(pValue, "sort_mode"))
                pCtx->current_meta_sort_mode_val = &pCtx->playlist->sort_mode;
             break;
+	  case 't':
+            if (string_is_equal(pValue, "thumbnail_match_mode"))
+               pCtx->current_meta_thumbnail_match_mode_val     = &pCtx->playlist->thumbnail_match_mode;
+	    break;
       }
    }
 
@@ -2456,7 +2567,7 @@ static bool playlist_read_file(playlist_t *playlist)
 {
    unsigned i;
    int test_char;
-   bool res = true;
+   bool res             = true;
 #if defined(HAVE_ZLIB)
       /* Always use RZIP interface when reading playlists
        * > this will automatically handle uncompressed
@@ -2483,10 +2594,10 @@ static bool playlist_read_file(playlist_t *playlist)
     *   non-whitespace ASCII character */
    do
    {
-	   /* Read error or EOF (end of file) */
+      /* Read error or EOF (end of file) */
       if ((test_char = intfstream_getc(file)) == EOF)
          goto end;
-   }while (!isgraph(test_char) || test_char > 0x7F);
+   } while (!isgraph(test_char) || test_char > 0x7F);
 
    playlist->old_format = (test_char != '{');
 
@@ -2644,8 +2755,8 @@ static bool playlist_read_file(playlist_t *playlist)
 
             /* > Populate default core path/name, if required
              *   (if one is empty, the other should be ignored) */
-            if (!string_is_empty(default_core_path) &&
-                !string_is_empty(default_core_name))
+            if (   !string_is_empty(default_core_path)
+                && !string_is_empty(default_core_name))
             {
                playlist->default_core_path = strdup(default_core_path);
                playlist->default_core_name = strdup(default_core_name);
@@ -2679,32 +2790,32 @@ static bool playlist_read_file(playlist_t *playlist)
                      line_buf[3],
                      STRLEN_CONST("thumbnail_mode")) == 0)
             {
+               char *tok, *save;
                char thumbnail_mode_str[8]          = {0};
-               struct string_list thumbnail_modes  = {0};
+               char *thumbnail_mode_str_cpy = strdup(thumbnail_mode_str);
 
                playlist_get_old_format_metadata_value(
                      line_buf[3], thumbnail_mode_str,
                      sizeof(thumbnail_mode_str));
-               string_list_initialize(&thumbnail_modes);
-               if (string_split_noalloc(&thumbnail_modes,
-                        thumbnail_mode_str, "|"))
+
+               if ((tok = strtok_r(thumbnail_mode_str_cpy, "|", &save)))
                {
-                  if (thumbnail_modes.size == 2)
+                  char *elem0 = strdup(tok);
+                  if ((tok = strtok_r(NULL, "|", &save)))
                   {
                      /* Right thumbnail mode */
-                     unsigned thumbnail_mode = string_to_unsigned(
-                           thumbnail_modes.elems[0].data);
+                     unsigned thumbnail_mode = string_to_unsigned(elem0);
                      if (thumbnail_mode <= PLAYLIST_THUMBNAIL_MODE_BOXARTS)
                         playlist->right_thumbnail_mode = (enum playlist_thumbnail_mode)thumbnail_mode;
 
                      /* Left thumbnail mode */
-                     thumbnail_mode = string_to_unsigned(
-                           thumbnail_modes.elems[1].data);
+                     thumbnail_mode = string_to_unsigned(tok);
                      if (thumbnail_mode <= PLAYLIST_THUMBNAIL_MODE_BOXARTS)
                         playlist->left_thumbnail_mode = (enum playlist_thumbnail_mode)thumbnail_mode;
                   }
+                  free(elem0);
                }
-               string_list_deinitialize(&thumbnail_modes);
+               free(thumbnail_mode_str_cpy);
             }
 
             /* Get sort_mode */
@@ -2775,7 +2886,7 @@ bool playlist_init_cached(const playlist_config_t *config)
 
 /**
  * playlist_init:
- * @config            	: Playlist configuration object.
+ * @config            : Playlist configuration object.
  *
  * Creates and initializes a playlist.
  *
@@ -2783,7 +2894,7 @@ bool playlist_init_cached(const playlist_config_t *config)
  **/
 playlist_t *playlist_init(const playlist_config_t *config)
 {
-   playlist_t           *playlist = (playlist_t*)malloc(sizeof(*playlist));
+   playlist_t           *playlist   = (playlist_t*)malloc(sizeof(*playlist));
    if (!playlist)
       goto error;
 
@@ -2799,6 +2910,7 @@ playlist_t *playlist_init(const playlist_config_t *config)
    playlist->label_display_mode     = LABEL_DISPLAY_MODE_DEFAULT;
    playlist->right_thumbnail_mode   = PLAYLIST_THUMBNAIL_MODE_DEFAULT;
    playlist->left_thumbnail_mode    = PLAYLIST_THUMBNAIL_MODE_DEFAULT;
+   playlist->thumbnail_match_mode   = PLAYLIST_THUMBNAIL_MATCH_MODE_DEFAULT;
    playlist->sort_mode              = PLAYLIST_SORT_MODE_DEFAULT;
 
    playlist->scan_record.search_recursively = false;
@@ -2845,10 +2957,11 @@ playlist_t *playlist_init(const playlist_config_t *config)
             entry->path = strdup(tmp_entry_path);
 
             /* Fix subsystem roms paths*/
-            if (entry->subsystem_roms && (entry->subsystem_roms->size > 0))
+            if (     (entry->subsystem_roms)
+                  && (entry->subsystem_roms->size > 0))
             {
                struct string_list* subsystem_roms_new_paths = string_list_new();
-               union string_list_elem_attr attributes = { 0 };
+               union string_list_elem_attr attributes       = { 0 };
 
                if (!subsystem_roms_new_paths)
                   goto error;
@@ -2862,8 +2975,10 @@ playlist_t *playlist_init(const playlist_config_t *config)
 
                   tmp_entry_path[0] = '\0';
                   path_replace_base_path_and_convert_to_local_file_system(
-                        tmp_entry_path, subsystem_rom_path,
-                        playlist->base_content_directory, playlist->config.base_content_directory,
+                        tmp_entry_path,
+                        subsystem_rom_path,
+                        playlist->base_content_directory,
+                        playlist->config.base_content_directory,
                         sizeof(tmp_entry_path));
                   string_list_append(subsystem_roms_new_paths, tmp_entry_path, attributes);
                }
@@ -2878,8 +2993,10 @@ playlist_t *playlist_init(const playlist_config_t *config)
          {
             tmp_entry_path[0] = '\0';
             path_replace_base_path_and_convert_to_local_file_system(
-                  tmp_entry_path, playlist->scan_record.content_dir,
-                  playlist->base_content_directory, playlist->config.base_content_directory,
+                  tmp_entry_path,
+                  playlist->scan_record.content_dir,
+                  playlist->base_content_directory,
+                  playlist->config.base_content_directory,
                   sizeof(tmp_entry_path));
 
             free(playlist->scan_record.content_dir);
@@ -2891,8 +3008,10 @@ playlist_t *playlist_init(const playlist_config_t *config)
          {
             tmp_entry_path[0] = '\0';
             path_replace_base_path_and_convert_to_local_file_system(
-                  tmp_entry_path, playlist->scan_record.dat_file_path,
-                  playlist->base_content_directory, playlist->config.base_content_directory,
+                  tmp_entry_path,
+                  playlist->scan_record.dat_file_path,
+                  playlist->base_content_directory,
+                  playlist->config.base_content_directory,
                   sizeof(tmp_entry_path));
 
             free(playlist->scan_record.dat_file_path);
@@ -2944,7 +3063,8 @@ static int playlist_qsort_func(const struct playlist_entry *a,
       if (!string_is_empty(a->path))
          fill_pathname(a_fallback_label,
                path_basename_nocompression(a->path),
-               "", PATH_MAX_LENGTH * sizeof(char));
+               "",
+               PATH_MAX_LENGTH * sizeof(char));
       /* If filename is also empty, use core name
        * instead -> this matches the behaviour of
        * menu_displaylist_parse_playlist() */
@@ -2966,7 +3086,8 @@ static int playlist_qsort_func(const struct playlist_entry *a,
 
       if (!string_is_empty(b->path))
          fill_pathname(b_fallback_label,
-               path_basename_nocompression(b->path), "",
+               path_basename_nocompression(b->path),
+               "",
                PATH_MAX_LENGTH * sizeof(char));
       else if (!string_is_empty(b->core_name))
          strlcpy(b_fallback_label, b->core_name, PATH_MAX_LENGTH * sizeof(char));
@@ -3000,9 +3121,9 @@ void playlist_qsort(playlist_t *playlist)
 {
    /* Avoid inadvertent sorting if 'sort mode'
     * has been set explicitly to PLAYLIST_SORT_MODE_OFF */
-   if (!playlist ||
-       (playlist->sort_mode == PLAYLIST_SORT_MODE_OFF) ||
-       !playlist->entries)
+   if (   !playlist
+       || !playlist->entries
+       || (playlist->sort_mode == PLAYLIST_SORT_MODE_OFF))
       return;
 
    qsort(playlist->entries, RBUF_LEN(playlist->entries),
@@ -3045,8 +3166,9 @@ bool playlist_index_is_valid(playlist_t *playlist, size_t idx,
    if (idx >= RBUF_LEN(playlist->entries))
       return false;
 
-   return string_is_equal(playlist->entries[idx].path, path) &&
-          string_is_equal(path_basename_nocompression(playlist->entries[idx].core_path), path_basename_nocompression(core_path));
+   return    playlist_path_equal(path, playlist->entries[idx].path, &playlist->config)
+          && string_is_equal(path_basename_nocompression(playlist->entries[idx].core_path),
+                path_basename_nocompression(core_path));
 }
 
 bool playlist_entries_are_equal(
@@ -3061,10 +3183,10 @@ bool playlist_entries_are_equal(
    if (!entry_a || !entry_b || !config)
       return false;
 
-   if (string_is_empty(entry_a->path) &&
-       string_is_empty(entry_a->core_path) &&
-       string_is_empty(entry_b->path) &&
-       string_is_empty(entry_b->core_path))
+   if (   string_is_empty(entry_a->path)
+       && string_is_empty(entry_a->core_path)
+       && string_is_empty(entry_b->path)
+       && string_is_empty(entry_b->core_path))
       return true;
 
    /* Check content paths */
@@ -3084,8 +3206,8 @@ bool playlist_entries_are_equal(
    if (!string_is_empty(entry_a->core_path))
    {
       strlcpy(real_core_path_a, entry_a->core_path, sizeof(real_core_path_a));
-      if (!string_is_equal(real_core_path_a, FILE_PATH_DETECT) &&
-          !string_is_equal(real_core_path_a, FILE_PATH_BUILTIN))
+      if (   !string_is_equal(real_core_path_a, FILE_PATH_DETECT)
+          && !string_is_equal(real_core_path_a, FILE_PATH_BUILTIN))
          playlist_resolve_path(PLAYLIST_SAVE, true,
                real_core_path_a, sizeof(real_core_path_a));
    }
@@ -3143,28 +3265,31 @@ void playlist_get_crc32(playlist_t *playlist, size_t idx,
 void playlist_get_db_name(playlist_t *playlist, size_t idx,
       const char **db_name)
 {
-   if (!playlist || idx >= RBUF_LEN(playlist->entries))
+   if (!playlist || !db_name || idx >= RBUF_LEN(playlist->entries))
       return;
 
-   if (db_name)
+   if (!string_is_empty(playlist->entries[idx].db_name))
+       *db_name = playlist->entries[idx].db_name;
+   else
    {
-      if (!string_is_empty(playlist->entries[idx].db_name))
-         *db_name = playlist->entries[idx].db_name;
-      else
-      {
-         const char *conf_path_basename = path_basename_nocompression(playlist->config.path);
+       const char *conf_path_basename = path_basename_nocompression(playlist->config.path);
 
-         /* Only use file basename if this is a 'collection' playlist
-          * (i.e. ignore history/favourites) */
-         if (
-                  !string_is_empty(conf_path_basename)
-               && !string_ends_with_size(conf_path_basename, "_history.lpl",
-                        strlen(conf_path_basename), STRLEN_CONST("_history.lpl"))
-               && !string_is_equal(conf_path_basename,
-                        FILE_PATH_CONTENT_FAVORITES)
-            )
-            *db_name = conf_path_basename;
-      }
+       /* Only use file basename if this is a 'collection' playlist
+        * (i.e. ignore history/favourites) */
+       if (
+           !string_is_empty(conf_path_basename)
+           && !string_is_equal(conf_path_basename,
+                               FILE_PATH_CONTENT_HISTORY)
+           && !string_is_equal(conf_path_basename,
+                               FILE_PATH_CONTENT_FAVORITES)
+           )
+           *db_name = conf_path_basename;
+       else
+       {
+          core_info_t *core_info = playlist_entry_get_core_info(&playlist->entries[idx]);
+          if (core_info && core_info->databases)
+             *db_name = core_info->databases;
+       }
    }
 }
 
@@ -3201,6 +3326,13 @@ enum playlist_thumbnail_mode playlist_get_thumbnail_mode(
    }
    /* Fallback */
    return PLAYLIST_THUMBNAIL_MODE_DEFAULT;
+}
+
+bool playlist_thumbnail_match_with_filename(playlist_t *playlist)
+{
+   if (!playlist)
+      return false;
+   return playlist->thumbnail_match_mode == PLAYLIST_THUMBNAIL_MATCH_MODE_WITH_FILENAME;
 }
 
 enum playlist_sort_mode playlist_get_sort_mode(playlist_t *playlist)
@@ -3252,6 +3384,13 @@ bool playlist_get_scan_filter_dat_content(playlist_t *playlist)
    return playlist->scan_record.filter_dat_content;
 }
 
+bool playlist_get_scan_overwrite_playlist(playlist_t *playlist)
+{
+   if (!playlist)
+      return false;
+   return playlist->scan_record.overwrite_playlist;
+}
+
 bool playlist_scan_refresh_enabled(playlist_t *playlist)
 {
    if (!playlist)
@@ -3259,7 +3398,8 @@ bool playlist_scan_refresh_enabled(playlist_t *playlist)
    return !string_is_empty(playlist->scan_record.content_dir);
 }
 
-void playlist_set_default_core_path(playlist_t *playlist, const char *core_path)
+void playlist_set_default_core_path(playlist_t *playlist,
+      const char *core_path)
 {
    char real_core_path[PATH_MAX_LENGTH];
 
@@ -3268,8 +3408,8 @@ void playlist_set_default_core_path(playlist_t *playlist, const char *core_path)
 
    /* Get 'real' core path */
    strlcpy(real_core_path, core_path, sizeof(real_core_path));
-   if (!string_is_equal(real_core_path, FILE_PATH_DETECT) &&
-       !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
+   if (   !string_is_equal(real_core_path, FILE_PATH_DETECT)
+       && !string_is_equal(real_core_path, FILE_PATH_BUILTIN))
        playlist_resolve_path(PLAYLIST_SAVE, true,
              real_core_path, sizeof(real_core_path));
 
@@ -3280,8 +3420,8 @@ void playlist_set_default_core_path(playlist_t *playlist, const char *core_path)
    {
       if (playlist->default_core_path)
          free(playlist->default_core_path);
-      playlist->default_core_path = strdup(real_core_path);
-      playlist->modified = true;
+      playlist->default_core_path  = strdup(real_core_path);
+      playlist->modified           = true;
    }
 }
 
@@ -3295,8 +3435,8 @@ void playlist_set_default_core_name(
    {
       if (playlist->default_core_name)
          free(playlist->default_core_name);
-      playlist->default_core_name = strdup(core_name);
-      playlist->modified = true;
+      playlist->default_core_name  = strdup(core_name);
+      playlist->modified           = true;
    }
 }
 
@@ -3306,7 +3446,7 @@ void playlist_set_label_display_mode(playlist_t *playlist,
    if (playlist && playlist->label_display_mode != label_display_mode)
    {
       playlist->label_display_mode = label_display_mode;
-      playlist->modified = true;
+      playlist->modified           = true;
    }
 }
 
@@ -3354,9 +3494,9 @@ void playlist_set_scan_content_dir(playlist_t *playlist, const char *content_dir
    /* Check whether string value has changed
     * (note that a NULL or empty argument will
     * unset the playlist value) */
-   if (( current_string_empty && !new_string_empty) ||
-       (!current_string_empty &&  new_string_empty) ||
-       !string_is_equal(playlist->scan_record.content_dir, content_dir))
+   if (    (current_string_empty && !new_string_empty)
+       || (!current_string_empty &&  new_string_empty)
+       || !string_is_equal(playlist->scan_record.content_dir, content_dir))
       playlist->modified = true;
    else
       return; /* Strings are identical; do nothing */
@@ -3385,9 +3525,9 @@ void playlist_set_scan_file_exts(playlist_t *playlist, const char *file_exts)
    /* Check whether string value has changed
     * (note that a NULL or empty argument will
     * unset the playlist value) */
-   if (( current_string_empty && !new_string_empty) ||
-       (!current_string_empty &&  new_string_empty) ||
-       !string_is_equal(playlist->scan_record.file_exts, file_exts))
+   if (   ( current_string_empty && !new_string_empty)
+       || (!current_string_empty &&  new_string_empty)
+       || !string_is_equal(playlist->scan_record.file_exts, file_exts))
       playlist->modified = true;
    else
       return; /* Strings are identical; do nothing */
@@ -3416,9 +3556,9 @@ void playlist_set_scan_dat_file_path(playlist_t *playlist, const char *dat_file_
    /* Check whether string value has changed
     * (note that a NULL or empty argument will
     * unset the playlist value) */
-   if (( current_string_empty && !new_string_empty) ||
-       (!current_string_empty &&  new_string_empty) ||
-       !string_is_equal(playlist->scan_record.dat_file_path, dat_file_path))
+   if (   ( current_string_empty && !new_string_empty)
+       || (!current_string_empty &&  new_string_empty)
+       || !string_is_equal(playlist->scan_record.dat_file_path, dat_file_path))
       playlist->modified = true;
    else
       return; /* Strings are identical; do nothing */
@@ -3460,18 +3600,26 @@ void playlist_set_scan_filter_dat_content(playlist_t *playlist, bool filter_dat_
    }
 }
 
+void playlist_set_scan_overwrite_playlist(playlist_t *playlist, bool overwrite_playlist)
+{
+   if (playlist && playlist->scan_record.overwrite_playlist != overwrite_playlist)
+   {
+      playlist->scan_record.overwrite_playlist = overwrite_playlist;
+      playlist->modified = true;
+   }
+}
+
 /* Returns true if specified entry has a valid
  * core association (i.e. a non-empty string
  * other than DETECT) */
 bool playlist_entry_has_core(const struct playlist_entry *entry)
 {
-   if (!entry                                              ||
-       string_is_empty(entry->core_path)                   ||
-       string_is_empty(entry->core_name)                   ||
-       string_is_equal(entry->core_path, FILE_PATH_DETECT) ||
-       string_is_equal(entry->core_name, FILE_PATH_DETECT))
+   if (  !entry
+       || string_is_empty(entry->core_path)
+       || string_is_empty(entry->core_name)
+       || string_is_equal(entry->core_path, FILE_PATH_DETECT)
+       || string_is_equal(entry->core_name, FILE_PATH_DETECT))
       return false;
-
    return true;
 }
 
@@ -3501,11 +3649,11 @@ core_info_t *playlist_get_default_core_info(playlist_t* playlist)
 {
    core_info_t *core_info = NULL;
 
-   if (!playlist ||
-       string_is_empty(playlist->default_core_path) ||
-       string_is_empty(playlist->default_core_name) ||
-       string_is_equal(playlist->default_core_path, FILE_PATH_DETECT) ||
-       string_is_equal(playlist->default_core_name, FILE_PATH_DETECT))
+   if (  !playlist
+       || string_is_empty(playlist->default_core_path)
+       || string_is_empty(playlist->default_core_name)
+       || string_is_equal(playlist->default_core_path, FILE_PATH_DETECT)
+       || string_is_equal(playlist->default_core_name, FILE_PATH_DETECT))
       return NULL;
 
    /* Search for associated core */

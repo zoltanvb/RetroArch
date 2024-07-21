@@ -48,6 +48,10 @@
 
 #include "ui_cocoa.h"
 
+#ifdef HAVE_MIST
+#include "steam/steam.h"
+#endif
+
 typedef struct ui_application_cocoa
 {
    void *empty;
@@ -149,7 +153,7 @@ static bool ui_browser_window_cocoa_open(ui_browser_window_state_t *state)
 #endif
    }
 
-#if defined(MAC_OS_X_VERSION_10_5)
+#if defined(MAC_OS_X_VERSION_10_5) && !defined(MAC_OS_X_VERSION_10_6)
    [panel setMessage:BOXSTRING(state->title)];
    if ([panel runModalForDirectory:BOXSTRING(state->startdir) file:nil] != 1)
       return false;
@@ -463,8 +467,14 @@ static ui_application_t ui_application_cocoa = {
             /* Absolute */
             apple->touches[0].screen_x  = (int16_t)pos.x;
             apple->touches[0].screen_y  = (int16_t)pos.y;
-            apple->window_pos_x         = (int16_t)pos.x;
-            apple->window_pos_y         = (int16_t)pos.y;
+
+            if (apple->mouse_grabbed) {
+               apple->window_pos_x      += (int16_t)delta_x;
+               apple->window_pos_y      += (int16_t)delta_y;
+            } else {
+               apple->window_pos_x       = (int16_t)pos.x;
+               apple->window_pos_y       = (int16_t)pos.y;
+            }
          }
          break;
 #if defined(HAVE_COCOA_METAL)
@@ -511,6 +521,61 @@ static ui_application_t ui_application_cocoa = {
 
 @end
 
+#if defined(HAVE_COCOA_METAL)
+@implementation WindowListener
+
+/* Similarly to SDL, we'll respond to key events
+ * by doing nothing so we don't beep.
+ */
+- (void)flagsChanged:(NSEvent *)event { }
+- (void)keyDown:(NSEvent *)event { }
+- (void)keyUp:(NSEvent *)event { }
+
+- (void)windowDidBecomeKey:(NSNotification *)notification
+{
+    [apple_platform updateWindowedMode];
+}
+
+- (void)windowDidMove:(NSNotification *)notification
+{
+   settings_t *settings             = config_get_ptr();
+   bool window_save_positions       = settings->bools.video_window_save_positions;
+   BOOL is_fullscreen = (self.window.styleMask
+         & NSWindowStyleMaskFullScreen) == NSWindowStyleMaskFullScreen;
+
+   if (!window_save_positions || is_fullscreen)
+       return;
+
+   NSRect frame = self.window.frame;
+   NSRect bounds = self.window.contentView.bounds;
+   settings->uints.window_position_x      = (unsigned)frame.origin.x;
+   settings->uints.window_position_y      = (unsigned)frame.origin.y;
+   settings->uints.window_position_width  = (unsigned)bounds.size.width;
+   settings->uints.window_position_height = (unsigned)bounds.size.height;
+}
+
+- (void)windowDidResize:(NSNotification *)notification
+{
+   settings_t *settings             = config_get_ptr();
+   bool window_save_positions       = settings->bools.video_window_save_positions;
+   BOOL is_fullscreen = (self.window.styleMask
+         & NSWindowStyleMaskFullScreen) == NSWindowStyleMaskFullScreen;
+
+   if (!window_save_positions || is_fullscreen)
+       return;
+
+   NSRect frame = self.window.frame;
+   NSRect bounds = self.window.contentView.bounds;
+   settings->uints.window_position_x      = (unsigned)frame.origin.x;
+   settings->uints.window_position_y      = (unsigned)frame.origin.y;
+   settings->uints.window_position_width  = (unsigned)bounds.size.width;
+   settings->uints.window_position_height = (unsigned)bounds.size.height;
+}
+
+@end
+#endif
+
+
 @implementation RetroArch_OSX
 
 @synthesize window = _window;
@@ -537,6 +602,7 @@ static ui_application_t ui_application_cocoa = {
 
 #ifdef HAVE_COCOA_METAL
    _listener = [WindowListener new];
+   _listener.window = self.window;
 
    [self.window setNextResponder:_listener];
    self.window.delegate = _listener;
@@ -565,8 +631,7 @@ static ui_application_t ui_application_cocoa = {
    waiting_argc = 0;
 
 #ifdef HAVE_COCOA_METAL
-   [self.window makeMainWindow];
-   [self.window makeKeyWindow];
+   [self setupMainWindow];
 #endif
 
    [self performSelectorOnMainThread:@selector(rarch_main) withObject:nil waitUntilDone:NO];
@@ -575,6 +640,12 @@ static ui_application_t ui_application_cocoa = {
 #pragma mark - ApplePlatform
 
 #ifdef HAVE_COCOA_METAL
+- (void)setupMainWindow
+{
+   [self.window makeMainWindow];
+   [self.window makeKeyWindow];
+}
+
 - (void)setViewType:(apple_view_type_t)vt
 {
    if (vt == _vt)
@@ -630,6 +701,7 @@ static ui_application_t ui_application_cocoa = {
       if (!is_fullscreen)
       {
          [self.window toggleFullScreen:self];
+         self.window.alphaValue = 1;
          return;
       }
    }
@@ -637,12 +709,57 @@ static ui_application_t ui_application_cocoa = {
    {
       if (is_fullscreen)
          [self.window toggleFullScreen:self];
+      [self updateWindowedSize:mode];
+      [self updateWindowedMode];
    }
 
    /* HACK(sgc): ensure MTKView posts a drawable resize event */
    if (mode.width > 0)
-      [self.window setContentSize:NSMakeSize(mode.width-1, mode.height)];
+       [self.window setContentSize:NSMakeSize(mode.width-1, mode.height)];
    [self.window setContentSize:NSMakeSize(mode.width, mode.height)];
+   [self.window displayIfNeeded];
+}
+
+- (void)updateWindowedSize:(gfx_ctx_mode_t)mode
+{
+   settings_t *settings             = config_get_ptr();
+   BOOL is_fullscreen = (self.window.styleMask
+         & NSWindowStyleMaskFullScreen) == NSWindowStyleMaskFullScreen;
+   bool windowed_full               = settings->bools.video_fullscreen && settings->bools.video_windowed_fullscreen;
+   bool window_save_positions       = settings->bools.video_window_save_positions;
+
+   if (is_fullscreen || windowed_full)
+       return;
+
+   if (window_save_positions)
+   {
+      NSRect frame;
+      frame.origin.x    = settings->uints.window_position_x;
+      frame.origin.y    = settings->uints.window_position_y;
+      frame.size.width  = settings->uints.window_position_width;
+      frame.size.height = settings->uints.window_position_height;
+      [self.window setFrame:frame display:YES];
+   }
+   else
+      [self.window setContentSize:NSMakeSize(mode.width, mode.height)];
+}
+
+- (void)updateWindowedMode
+{
+   settings_t *settings      = config_get_ptr();
+   bool windowed_full        = settings->bools.video_windowed_fullscreen;
+   bool show_decorations     = settings->bools.video_window_show_decorations;
+   CGFloat opacity           = (CGFloat)settings->uints.video_window_opacity / (CGFloat)100.0;
+
+   if (windowed_full || !self.window.keyWindow)
+       return;
+
+   if (show_decorations)
+       self.window.styleMask |= NSWindowStyleMaskTitled;
+   else
+       self.window.styleMask &= ~NSWindowStyleMaskTitled;
+
+   self.window.alphaValue = opacity;
 }
 
 - (void)setCursorVisible:(bool)v
@@ -678,7 +795,7 @@ static ui_application_t ui_application_cocoa = {
     {
        int ret;
 #ifdef HAVE_QT
-       const ui_application_t *application = &ui_application_qt;
+       const ui_application_t *application = uico_state_get_ptr()->drv->application;
 #else
        const ui_application_t *application = &ui_application_cocoa;
 #endif
@@ -689,12 +806,16 @@ static ui_application_t ui_application_cocoa = {
 
        task_queue_check();
 
+#ifdef HAVE_MIST
+       steam_poll();
+#endif
+
        while (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.002, FALSE) 
              == kCFRunLoopRunHandledSource);
        if (ret == -1)
        {
 #ifdef HAVE_QT
-          ui_application_qt.quit();
+          application->quit();
 #endif
           break;
        }
@@ -723,9 +844,9 @@ static ui_application_t ui_application_cocoa = {
 {
    if ((filenames.count == 1) && [filenames objectAtIndex:0])
    {
-      struct retro_system_info *system = &runloop_state_get_ptr()->system.info;
-      NSString *__core                 = [filenames objectAtIndex:0];
-      const char *core_name            = system->library_name;
+      struct retro_system_info *sysinfo = &runloop_state_get_ptr()->system.info;
+      NSString *__core                  = [filenames objectAtIndex:0];
+      const char *core_name             = sysinfo->library_name;
 
       if (core_name)
       {
@@ -761,7 +882,7 @@ static ui_application_t ui_application_cocoa = {
 
 static void open_core_handler(ui_browser_window_state_t *state, bool result)
 {
-   rarch_system_info_t *info        = &runloop_state_get_ptr()->system;
+   rarch_system_info_t *sys_info    = &runloop_state_get_ptr()->system;
    settings_t           *settings   = config_get_ptr();
    bool set_supports_no_game_enable = 
       settings->bools.set_supports_no_game_enable;
@@ -773,8 +894,8 @@ static void open_core_handler(ui_browser_window_state_t *state, bool result)
    path_set(RARCH_PATH_CORE, state->result);
    ui_companion_event_command(CMD_EVENT_LOAD_CORE);
 
-   if (     info
-         && info->load_no_content
+   if (     sys_info
+         && sys_info->load_no_content
          && set_supports_no_game_enable)
    {
       content_ctx_info_t content_info = {0};
@@ -790,8 +911,8 @@ static void open_core_handler(ui_browser_window_state_t *state, bool result)
 static void open_document_handler(
       ui_browser_window_state_t *state, bool result)
 {
-   struct retro_system_info *system = &runloop_state_get_ptr()->system.info;
-   const char            *core_name = system ? system->library_name : NULL;
+   struct retro_system_info *sysinfo = &runloop_state_get_ptr()->system.info;
+   const char            *core_name  = sysinfo ? sysinfo->library_name : NULL;
 
    if (!state || string_is_empty(state->result))
       return;
@@ -846,7 +967,7 @@ static void open_document_handler(
    if (browser)
    {
       ui_browser_window_state_t
-         browser_state                  = {{0}};
+         browser_state                  = {NULL};
       bool result                       = false;
       settings_t *settings              = config_get_ptr();
       const char *path_dir_menu_content = settings->paths.directory_menu_content;
@@ -962,16 +1083,22 @@ static void ui_companion_cocoa_deinit(void *data)
 }
 
 static void *ui_companion_cocoa_init(void) { return (void*)-1; }
-static void ui_companion_cocoa_notify_content_loaded(void *data) { }
 static void ui_companion_cocoa_toggle(void *data, bool force) { }
 static void ui_companion_cocoa_event_command(void *data, enum event_command cmd)
 {
-   id performer = [[CommandPerformer alloc] initWithData:data command:cmd];
-   [performer performSelectorOnMainThread:@selector(perform) withObject:nil waitUntilDone:NO];
-   RELEASE(performer);
+   switch (cmd)
+   {
+      case CMD_EVENT_SHADERS_APPLY_CHANGES:
+      case CMD_EVENT_SHADER_PRESET_LOADED:
+         break;
+      default: {
+         id performer = [[CommandPerformer alloc] initWithData:data command:cmd];
+         [performer performSelectorOnMainThread:@selector(perform) withObject:nil waitUntilDone:NO];
+         RELEASE(performer);
+      }
+      break;
+   }
 }
-static void ui_companion_cocoa_notify_list_pushed(void *data, file_list_t *a, file_list_t *b) { }
-
 static void *ui_companion_cocoa_get_main_window(void *data)
 {
     return (BRIDGE void *)((RetroArch_OSX*)[[NSApplication sharedApplication] delegate]).window;
@@ -982,14 +1109,15 @@ ui_companion_driver_t ui_companion_cocoa = {
    ui_companion_cocoa_deinit,
    ui_companion_cocoa_toggle,
    ui_companion_cocoa_event_command,
-   ui_companion_cocoa_notify_content_loaded,
-   ui_companion_cocoa_notify_list_pushed,
    NULL, /* notify_refresh */
    NULL, /* msg_queue_push */
    NULL, /* render_messagebox */
    ui_companion_cocoa_get_main_window,
    NULL, /* log_msg */
    NULL, /* is_active */
+   NULL, /* get_app_icons */
+   NULL, /* set_app_icon */
+   NULL, /* get_app_icon_texture */
    &ui_browser_window_cocoa,
    &ui_msg_window_cocoa,
    &ui_window_cocoa,

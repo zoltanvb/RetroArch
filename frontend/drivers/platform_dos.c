@@ -26,6 +26,7 @@
 #include "../../command.h"
 #include "../../defaults.h"
 #include "../../paths.h"
+#include "../../verbosity.h"
 
 static enum frontend_fork dos_fork_mode = FRONTEND_FORK_NONE;
 
@@ -36,15 +37,9 @@ static void frontend_dos_init(void *data)
 	printf("Loading RetroArch. Time is @%ld...\n", (long) time(NULL));
 }
 
-static void frontend_dos_shutdown(bool unused)
-{
-	(void)unused;
-}
-
-static int frontend_dos_get_rating(void)
-{
-	return -1;
-}
+/* TODO/FIXME - implement */
+static void frontend_dos_shutdown(bool unused) { }
+static int frontend_dos_get_rating(void) { return -1; }
 
 enum frontend_architecture frontend_dos_get_arch(void)
 {
@@ -95,10 +90,6 @@ static void frontend_dos_get_env_settings(int *argc, char *argv[],
 			   "cheats", sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
 	fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], base_path,
 			   "overlay", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
-#ifdef HAVE_VIDEO_LAYOUT
-	fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], base_path,
-			   "layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
-#endif
 	fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS], base_path,
 			   "download", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS]));
 	fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT], base_path,
@@ -131,16 +122,8 @@ static void frontend_dos_exitspawn(char *s, size_t len, char *args)
 
 	if (dos_fork_mode == FRONTEND_FORK_NONE)
 		return;
-	
-	switch (dos_fork_mode)
-	{
-	case FRONTEND_FORK_CORE_WITH_ARGS:
-		should_load_content = true;
-		break;
-	case FRONTEND_FORK_NONE:
-	default:
-		break;
-	}
+	if (dos_fork_mode == FRONTEND_FORK_CORE_WITH_ARGS)
+      should_load_content = true;
 
 	frontend_dos_exec(s, should_load_content);
 }

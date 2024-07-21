@@ -363,7 +363,7 @@ static bool video_thread_handle_packet(
          /* Never reply on no command. Possible deadlock if
           * thread sends command right after frame update. */
          break;
-         
+
       case CMD_POKE_SET_HDR_MAX_NITS:
          if (thr->driver_data && thr->poke && thr->poke->set_hdr_max_nits)
             thr->poke->set_hdr_max_nits(
@@ -372,7 +372,7 @@ static bool video_thread_handle_packet(
             );
          video_thread_reply(thr, &pkt);
          break;
-         
+
       case CMD_POKE_SET_HDR_PAPER_WHITE_NITS:
          if (thr->driver_data &&
                thr->poke && thr->poke->set_hdr_paper_white_nits)
@@ -382,7 +382,7 @@ static bool video_thread_handle_packet(
             );
          video_thread_reply(thr, &pkt);
          break;
-         
+
       case CMD_POKE_SET_HDR_CONTRAST:
          if (thr->driver_data && thr->poke && thr->poke->set_hdr_contrast)
             thr->poke->set_hdr_contrast(
@@ -391,7 +391,7 @@ static bool video_thread_handle_packet(
             );
          video_thread_reply(thr, &pkt);
          break;
-         
+
       case CMD_POKE_SET_HDR_EXPAND_GAMUT:
          if (thr->driver_data && thr->poke && thr->poke->set_hdr_expand_gamut)
             thr->poke->set_hdr_expand_gamut(
@@ -457,7 +457,7 @@ static void video_thread_loop(void *data)
                video_frame_info_t video_info;
                bool               ret;
 
-               /* TODO/FIXME - not thread-safe - should get 
+               /* TODO/FIXME - not thread-safe - should get
                 * rid of this */
                video_driver_build_info(&video_info);
 
@@ -508,7 +508,7 @@ static bool video_thread_alive(void *data)
 
    if (!thr)
       return false;
-   
+
    runloop_flags       = runloop_get_flags();
 
    if (runloop_flags & RUNLOOP_FLAG_PAUSED)
@@ -1166,7 +1166,7 @@ static void thread_set_texture_enable(void *data, bool state, bool full_screen)
 }
 
 static void thread_set_osd_msg(void *data,
-      const char *msg, const void *params, void *font)
+      const char *msg, const struct font_params *params, void *font)
 {
    thread_video_t *thr = (thread_video_t*)data;
 
@@ -1333,9 +1333,6 @@ static const video_driver_t video_thread = {
 #ifdef HAVE_OVERLAY
    video_thread_get_overlay_interface,
 #endif
-#ifdef HAVE_VIDEO_LAYOUT
-   NULL, /* video_layout_render_interface */
-#endif
    video_thread_get_poke_interface,
    NULL, /* wrap_type_to_enum */
 #ifdef HAVE_GFX_WIDGETS
@@ -1426,7 +1423,7 @@ bool video_thread_font_init(const void **font_driver, void **font_handle,
    return pkt.data.font_init.return_value;
 }
 
-unsigned video_thread_texture_load(void *data, custom_command_method_t func)
+unsigned video_thread_texture_handle(void *data, custom_command_method_t func)
 {
    thread_packet_t pkt;
    video_driver_state_t *video_st = video_state_get_ptr();
@@ -1434,6 +1431,11 @@ unsigned video_thread_texture_load(void *data, custom_command_method_t func)
 
    if (!thr)
       return 0;
+
+   /* if we're already on the video thread, just call the function, otherwise
+    * we may deadlock with ourself waiting for the packet to be processed. */
+   if (sthread_get_thread_id(thr->thread) == sthread_get_current_thread_id() || !thr->alive)
+      return func(data);
 
    pkt.type                       = CMD_CUSTOM_COMMAND;
    pkt.data.custom_command.method = func;

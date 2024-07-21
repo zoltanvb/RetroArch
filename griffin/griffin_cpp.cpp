@@ -58,20 +58,13 @@ UI
 #include "../ui/drivers/qt/qt_downloads.cpp"
 #ifdef HAVE_MENU
 #include "../ui/drivers/qt/qt_options.cpp"
-#include "../ui/drivers/qt/moc_options.cpp"
-#include "../ui/drivers/qt/moc_settingswidgets.cpp"
+#include "../ui/drivers/qt/moc_qt_options.cpp"
 #endif
 #include "../ui/drivers/moc_ui_qt.cpp"
-#include "../ui/drivers/qt/moc_coreinfodialog.cpp"
-#include "../ui/drivers/qt/moc_coreoptionsdialog.cpp"
-#include "../ui/drivers/qt/moc_filedropwidget.cpp"
 #include "../ui/drivers/qt/moc_gridview.cpp"
-#include "../ui/drivers/qt/moc_playlistentrydialog.cpp"
-#if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
-#include "../ui/drivers/qt/moc_shaderparamsdialog.cpp"
-#endif
 #include "../ui/drivers/qt/moc_ui_qt_load_core_window.cpp"
-#include "../ui/drivers/qt/moc_viewoptionsdialog.cpp"
+#include "../ui/drivers/qt/moc_qt_dialogs.cpp"
+#include "../ui/drivers/qt/moc_qt_widgets.cpp"
 #endif
 
 /*============================================================
@@ -86,7 +79,7 @@ VIDEO DRIVER
 #endif
 
 #if defined(HAVE_SPIRV_CROSS)
-#if defined(ENABLE_HLSL)
+#if defined(HAVE_HLSL)
 #include "../deps/SPIRV-Cross/spirv_hlsl.cpp"
 #endif
 #include "../deps/SPIRV-Cross/spirv_cross.cpp"

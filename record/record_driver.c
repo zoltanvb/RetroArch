@@ -28,6 +28,7 @@
 #include "../retroarch.h"
 #include "../runloop.h"
 #include "../verbosity.h"
+#include "../defaults.h"
 
 #include "record_driver.h"
 
@@ -170,7 +171,12 @@ static bool record_driver_init_first(
 bool recording_deinit(void)
 {
    recording_state_t *recording_st = &recording_state;
-   if (     !recording_st->data 
+#ifdef HAVE_FFMPEG
+   settings_t *settings            = config_get_ptr();
+   bool history_list_enable        = settings->bools.history_list_enable;
+#endif
+
+   if (     !recording_st->data
 		   || !recording_st->driver)
       return false;
 
@@ -184,6 +190,25 @@ bool recording_deinit(void)
    recording_st->driver            = NULL;
 
    video_driver_gpu_record_deinit();
+
+   /* Push recording to video history playlist */
+#ifdef HAVE_FFMPEG
+   if (     history_list_enable
+         && !string_is_empty(recording_st->path))
+   {
+      struct playlist_entry entry = {0};
+
+      /* the push function reads our entry as const, so these casts are safe */
+      entry.path                  = recording_st->path;
+      entry.core_path             = (char*)"builtin";
+      entry.core_name             = (char*)"movieplayer";
+
+      command_playlist_push_write(g_defaults.video_history, &entry);
+   }
+#endif
+
+   /* Forget cached path to create a new one next */
+   recording_st->path[0] = '\0';
 
    return true;
 }
@@ -244,12 +269,17 @@ bool recording_init(void)
       unsigned video_record_quality = settings->uints.video_record_quality;
       unsigned video_stream_port    = settings->uints.video_stream_port;
       if (recording_st->streaming_enable)
+      {
          if (!string_is_empty(stream_url))
             strlcpy(output, stream_url, sizeof(output));
          else
+         {
             /* Fallback, stream locally to 127.0.0.1 */
-            snprintf(output, sizeof(output), "udp://127.0.0.1:%u",
+            size_t _len = strlcpy(output, "udp://127.0.0.1:", sizeof(output));
+            snprintf(output + _len, sizeof(output) - _len, "%u",
                   video_stream_port);
+         }
+      }
       else
       {
          const char *game_name = path_basename(path_get(RARCH_PATH_BASENAME));
@@ -283,6 +313,10 @@ bool recording_init(void)
                      "png", sizeof(buf));
             fill_pathname_join_special(output, recording_st->output_dir, buf, sizeof(output));
          }
+
+         /* Cache path for playlist saving */
+         if (!string_is_empty(output))
+            strlcpy(recording_st->path, output, sizeof(recording_st->path));
       }
    }
 
@@ -440,44 +474,49 @@ void recording_driver_update_streaming_url(void)
       case STREAMING_MODE_TWITCH:
          if (!string_is_empty(settings->arrays.twitch_stream_key))
          {
-            strlcpy(settings->paths.path_stream_url,
+            size_t _len = strlcpy(settings->paths.path_stream_url,
                   twitch_url,
                   sizeof(settings->paths.path_stream_url));
-            strlcat(settings->paths.path_stream_url,
+            strlcpy(settings->paths.path_stream_url       + _len,
                   settings->arrays.twitch_stream_key,
-                  sizeof(settings->paths.path_stream_url));
+                  sizeof(settings->paths.path_stream_url) - _len);
          }
          break;
       case STREAMING_MODE_YOUTUBE:
          if (!string_is_empty(settings->arrays.youtube_stream_key))
          {
-            strlcpy(settings->paths.path_stream_url,
+            size_t _len = strlcpy(settings->paths.path_stream_url,
                   youtube_url,
                   sizeof(settings->paths.path_stream_url));
-            strlcat(settings->paths.path_stream_url,
+            strlcpy(settings->paths.path_stream_url       + _len,
                   settings->arrays.youtube_stream_key,
-                  sizeof(settings->paths.path_stream_url));
+                  sizeof(settings->paths.path_stream_url) - _len);
          }
          break;
       case STREAMING_MODE_LOCAL:
-         /* TODO: figure out default interface and bind to that instead */
-         snprintf(settings->paths.path_stream_url, sizeof(settings->paths.path_stream_url),
-            "udp://%s:%u", "127.0.0.1", settings->uints.video_stream_port);
-         break;
-      case STREAMING_MODE_CUSTOM:
-      default:
-         /* Do nothing, let the user input the URL */
+         {
+            /* TODO: figure out default interface and bind to that instead */
+            size_t _len = strlcpy(settings->paths.path_stream_url, "udp://127.0.0.1:",
+                  sizeof(settings->paths.path_stream_url));
+            snprintf(settings->paths.path_stream_url      + _len,
+                  sizeof(settings->paths.path_stream_url) - _len,
+                  "%u", settings->uints.video_stream_port);
+         }
          break;
       case STREAMING_MODE_FACEBOOK:
          if (!string_is_empty(settings->arrays.facebook_stream_key))
          {
-            strlcpy(settings->paths.path_stream_url,
+            size_t _len = strlcpy(settings->paths.path_stream_url,
                   facebook_url,
                   sizeof(settings->paths.path_stream_url));
-            strlcat(settings->paths.path_stream_url,
+            strlcpy(settings->paths.path_stream_url       + _len,
                   settings->arrays.facebook_stream_key,
-                  sizeof(settings->paths.path_stream_url));
+                  sizeof(settings->paths.path_stream_url) - _len);
          }
+         break;
+      case STREAMING_MODE_CUSTOM:
+      default:
+         /* Do nothing, let the user input the URL */
          break;
    }
 }

@@ -99,7 +99,6 @@ OBJ              :=
 LIBS             := -lm
 DEFINES			  :=
 DEFINES          += -I. -Ilibretro-common/include -Ilibretro-common/include/compat/zlib -DRARCH_INTERNAL -DHAVE_SCREENSHOTS -DHAVE_OVERLAY
-#DEFINES			  += -DHAVE_VIDEO_LAYOUT
 LDFLAGS          := -L. -static-libgcc
 
 include Makefile.common
@@ -170,7 +169,7 @@ $(OBJDIR)/%.o: %.cpp | $(dir $@)
 $(OBJDIR)/%.o: %.rc $(HEADERS)
 	@-mkdir -p $(dir $@) || mkdir $(subst /,\,$(dir $@)) || echo .
 	@$(if $(Q), $(shell echo echo WINDRES $<),)
-	$(Q)$(WINDRES) -o $@ $<
+	$(Q)$(WINDRES) $(DEFINES) -o $@ $<
 
 clean:
 	rm -rf $(OBJDIR)

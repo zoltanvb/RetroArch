@@ -17,8 +17,6 @@
 #include <string/stdstring.h>
 #include <retro_environment.h>
 
-#include <assert.h>
-
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
 #endif
@@ -163,19 +161,19 @@ DXGI_FORMAT* dxgi_get_format_fallback_list(DXGI_FORMAT format)
       dst_gb, dst_bb, dst_ab, dst_rs, dst_gs, dst_bs, dst_as) \
    do \
    { \
-      if ((sizeof(src_type) == sizeof(dst_type)) && \
-          ((src_rs == dst_rs && src_rb == dst_rb) || !dst_rb) && \
-          ((src_gs == dst_gs && src_gb == dst_gb) || !dst_gb) && \
-          ((src_bs == dst_bs && src_bb == dst_bb) || !dst_bb) && \
-          ((src_as == dst_as && src_ab == dst_ab) || !dst_ab)) \
+      if (    (sizeof(src_type) == sizeof(dst_type)) \
+          && ((src_rs == dst_rs && src_rb == dst_rb) || !dst_rb) \
+          && ((src_gs == dst_gs && src_gb == dst_gb) || !dst_gb) \
+          && ((src_bs == dst_bs && src_bb == dst_bb) || !dst_bb) \
+          && ((src_as == dst_as && src_ab == dst_ab) || !dst_ab)) \
       { \
          const UINT8* in  = (const UINT8*)src_data; \
          UINT8*       out = (UINT8*)dst_data; \
          for (i = 0; i < height; i++) \
          { \
             memcpy(out, in, width * sizeof(src_type)); \
-            in += src_pitch ? src_pitch : width * sizeof(src_type); \
-            out += dst_pitch ? dst_pitch : width * sizeof(dst_type); \
+            in  += src_pitch ? (int)src_pitch  : (int)(width * sizeof(src_type)); \
+            out += dst_pitch ? (int)dst_pitch  : (int)(width * sizeof(dst_type)); \
          } \
       } \
       else \
@@ -287,7 +285,6 @@ DXGI_FORMAT* dxgi_get_format_fallback_list(DXGI_FORMAT format)
              break; \
          } \
          default: \
-            assert(0); \
             break; \
       } \
       break; \
@@ -323,7 +320,6 @@ void dxgi_copy(
       FORMAT_SRC(DXGI_FORMAT_EX_A4R4G4B4_UNORM);
 
       default:
-         assert(0);
          break;
    }
 }
@@ -738,14 +734,14 @@ void dxgi_set_hdr_metadata(
    hdr10_meta_data.MaxFrameAverageLightLevel    = 
       (UINT16)(max_fall);
 
-   if(g_hdr10_meta_data.RedPrimary                 != hdr10_meta_data.RedPrimary ||
-      g_hdr10_meta_data.GreenPrimary               != hdr10_meta_data.GreenPrimary ||
-      g_hdr10_meta_data.BluePrimary                != hdr10_meta_data.BluePrimary ||
-      g_hdr10_meta_data.WhitePoint                 != hdr10_meta_data.WhitePoint ||
-      g_hdr10_meta_data.MaxContentLightLevel       != hdr10_meta_data.MaxContentLightLevel ||
-      g_hdr10_meta_data.MaxMasteringLuminance      != hdr10_meta_data.MaxMasteringLuminance ||
-      g_hdr10_meta_data.MinMasteringLuminance      != hdr10_meta_data.MinMasteringLuminance ||
-      g_hdr10_meta_data.MaxFrameAverageLightLevel  != hdr10_meta_data.MaxFrameAverageLightLevel)
+   if (g_hdr10_meta_data.RedPrimary                 != hdr10_meta_data.RedPrimary            ||
+       g_hdr10_meta_data.GreenPrimary               != hdr10_meta_data.GreenPrimary          ||
+       g_hdr10_meta_data.BluePrimary                != hdr10_meta_data.BluePrimary           ||
+       g_hdr10_meta_data.WhitePoint                 != hdr10_meta_data.WhitePoint            ||
+       g_hdr10_meta_data.MaxContentLightLevel       != hdr10_meta_data.MaxContentLightLevel  ||
+       g_hdr10_meta_data.MaxMasteringLuminance      != hdr10_meta_data.MaxMasteringLuminance ||
+       g_hdr10_meta_data.MinMasteringLuminance      != hdr10_meta_data.MinMasteringLuminance ||
+       g_hdr10_meta_data.MaxFrameAverageLightLevel  != hdr10_meta_data.MaxFrameAverageLightLevel)
    {
 #ifdef __cplusplus
       if (FAILED(handle->SetHDRMetaData(

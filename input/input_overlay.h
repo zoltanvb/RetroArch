@@ -34,30 +34,10 @@
 
 #define CUSTOM_BINDS_U32_COUNT ((RARCH_CUSTOM_BIND_LIST_END - 1) / 32 + 1)
 
+#define OVERLAY_MAX_TOUCH 16
+#define OVERLAY_LIGHTGUN_TRIG_MAX_DELAY 15
+
 RETRO_BEGIN_DECLS
-
-/* Overlay driver acts as a medium between input drivers
- * and video driver.
- *
- * Coordinates are fetched from input driver, and an
- * overlay with pressable actions are displayed on-screen.
- *
- * This interface requires that the video driver has support
- * for the overlay interface.
- */
-
-typedef struct video_overlay_interface
-{
-   void (*enable)(void *data, bool state);
-   bool (*load)(void *data,
-         const void *images, unsigned num_images);
-   void (*tex_geom)(void *data, unsigned image,
-         float x, float y, float w, float h);
-   void (*vertex_geom)(void *data, unsigned image,
-         float x, float y, float w, float h);
-   void (*full_screen)(void *data, bool enable);
-   void (*set_alpha)(void *data, unsigned image, float mod);
-} video_overlay_interface_t;
 
 enum overlay_hitbox
 {
@@ -73,7 +53,14 @@ enum overlay_type
    OVERLAY_TYPE_ANALOG_RIGHT,
    OVERLAY_TYPE_DPAD_AREA,
    OVERLAY_TYPE_ABXY_AREA,
-   OVERLAY_TYPE_KEYBOARD
+   OVERLAY_TYPE_KEYBOARD,
+   OVERLAY_TYPE_LAST
+};
+
+/* Superset of overlay_type for menu entries */
+enum overlay_menu_type
+{
+   OVERLAY_TYPE_OSK_TOGGLE = OVERLAY_TYPE_LAST
 };
 
 enum overlay_status
@@ -123,17 +110,16 @@ enum overlay_show_input_type
 
 enum OVERLAY_LOADER_FLAGS
 {
-   OVERLAY_LOADER_ENABLE                      = (1 << 0),
-   OVERLAY_LOADER_HIDE_IN_MENU                = (1 << 1),
-   OVERLAY_LOADER_HIDE_WHEN_GAMEPAD_CONNECTED = (1 << 2),
-   OVERLAY_LOADER_RGBA_SUPPORT                = (1 << 3)
+   OVERLAY_LOADER_RGBA_SUPPORT = (1 << 0),
+   OVERLAY_LOADER_IS_OSK       = (1 << 1)
 };
 
 enum INPUT_OVERLAY_FLAGS
 {
    INPUT_OVERLAY_ENABLE  = (1 << 0),
    INPUT_OVERLAY_ALIVE   = (1 << 1),
-   INPUT_OVERLAY_BLOCKED = (1 << 2)
+   INPUT_OVERLAY_BLOCKED = (1 << 2),
+   INPUT_OVERLAY_IS_OSK  = (1 << 3)
 };
 
 enum OVERLAY_FLAGS
@@ -141,7 +127,9 @@ enum OVERLAY_FLAGS
    OVERLAY_FULL_SCREEN        = (1 << 0),
    OVERLAY_BLOCK_SCALE        = (1 << 1),
    OVERLAY_BLOCK_X_SEPARATION = (1 << 2),
-   OVERLAY_BLOCK_Y_SEPARATION = (1 << 3)
+   OVERLAY_BLOCK_Y_SEPARATION = (1 << 3),
+   OVERLAY_AUTO_X_SEPARATION  = (1 << 4),
+   OVERLAY_AUTO_Y_SEPARATION  = (1 << 5)
 };
 
 enum OVERLAY_DESC_FLAGS
@@ -152,6 +140,47 @@ enum OVERLAY_DESC_FLAGS
    /* Similar, but only applies after range_mod takes effect */
    OVERLAY_DESC_RANGE_MOD_EXCLUSIVE = (1 << 2)
 };
+
+enum overlay_lightgun_action
+{
+   OVERLAY_LIGHTGUN_ACTION_NONE = 0,
+   OVERLAY_LIGHTGUN_ACTION_TRIGGER,
+   OVERLAY_LIGHTGUN_ACTION_RELOAD,
+   OVERLAY_LIGHTGUN_ACTION_AUX_A,
+   OVERLAY_LIGHTGUN_ACTION_AUX_B,
+   OVERLAY_LIGHTGUN_ACTION_AUX_C,
+   OVERLAY_LIGHTGUN_ACTION_START,
+   OVERLAY_LIGHTGUN_ACTION_SELECT,
+   OVERLAY_LIGHTGUN_ACTION_DPAD_UP,
+   OVERLAY_LIGHTGUN_ACTION_DPAD_DOWN,
+   OVERLAY_LIGHTGUN_ACTION_DPAD_LEFT,
+   OVERLAY_LIGHTGUN_ACTION_DPAD_RIGHT,
+
+   OVERLAY_LIGHTGUN_ACTION_END
+};
+
+/* Overlay driver acts as a medium between input drivers
+ * and video driver.
+ *
+ * Coordinates are fetched from input driver, and an
+ * overlay with pressable actions are displayed on-screen.
+ *
+ * This interface requires that the video driver has support
+ * for the overlay interface.
+ */
+
+typedef struct video_overlay_interface
+{
+   void (*enable)(void *data, bool state);
+   bool (*load)(void *data,
+         const void *images, unsigned num_images);
+   void (*tex_geom)(void *data, unsigned image,
+         float x, float y, float w, float h);
+   void (*vertex_geom)(void *data, unsigned image,
+         float x, float y, float w, float h);
+   void (*full_screen)(void *data, bool enable);
+   void (*set_alpha)(void *data, unsigned image, float mod);
+} video_overlay_interface_t;
 
 typedef struct overlay_eightway_config
 {
@@ -215,12 +244,12 @@ struct overlay_desc
 
    char next_index_name[64];
 
-   /* Nonzero if pressed. One bit per input pointer */
-   uint16_t updated;
+   /* Nonzero if pressed. Lower bits used for pointer indexes */
+   uint32_t touch_mask;
+   uint32_t old_touch_mask;
 
    uint8_t flags;
 };
-
 
 struct overlay
 {
@@ -284,22 +313,69 @@ typedef struct input_overlay_state
    int16_t analog[4];
    /* This is a bitmask of (1 << key_bind_id). */
    input_bits_t buttons;
+
+   /* Input pointers from input_state */
+   struct
+   {
+      int16_t x;
+      int16_t y;
+   } touch[OVERLAY_MAX_TOUCH];
+   int touch_count;
 } input_overlay_state_t;
+
+/* Non-hitbox input state for pointer, mouse, and lightgun */
+typedef struct input_overlay_pointer_state
+{
+   /* Input pointers that missed every hitbox */
+   struct
+   {
+      int16_t x;
+      int16_t y;
+   } ptr[OVERLAY_MAX_TOUCH];
+   unsigned count;
+
+   /* Main pointer, full screen */
+   int16_t screen_x;
+   int16_t screen_y;
+
+   struct input_overlay_lightgun_state
+   {
+      /* Input ID based on pointer count */
+      unsigned multitouch_id;
+   } lightgun;
+
+   struct input_overlay_mouse_state
+   {
+      float scale_x;
+      float scale_y;
+
+      int16_t prev_screen_x;
+      int16_t prev_screen_y;
+
+      /* Bits 0-2 used for LMB, RMB, MMB */
+      uint8_t click;
+      uint8_t hold;
+   } mouse;
+
+   /* Mask of requested devices
+    * to avoid unnecessary polling */
+   uint8_t device_mask;
+} input_overlay_pointer_state_t;
 
 struct input_overlay
 {
    struct overlay *overlays;
    const struct overlay *active;
+   char *path;
    void *iface_data;
    const video_overlay_interface_t *iface;
    input_overlay_state_t overlay_state;
+   input_overlay_pointer_state_t pointer_state;
 
    size_t index;
    size_t size;
 
    unsigned next_index;
-
-   enum overlay_status state;
 
    uint8_t flags;
 };
@@ -343,11 +419,10 @@ typedef struct input_overlay input_overlay_t;
 
 typedef struct
 {
+   char *overlay_path;
    struct overlay *overlays;
    struct overlay *active;
    size_t size;
-   float overlay_opacity;
-   overlay_layout_desc_t layout_desc;
    uint16_t overlay_types;
    uint8_t flags;
 } overlay_task_data_t;

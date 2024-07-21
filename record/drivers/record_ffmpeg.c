@@ -19,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <retro_assert.h>
 #include <compat/msvc.h>
 #include <compat/strl.h>
 
@@ -71,6 +70,7 @@ extern "C" {
 #include "../../verbosity.h"
 
 #define FFMPEG3 (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100))
+#define HAVE_CH_LAYOUT (LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100))
 
 struct ff_video_info
 {
@@ -302,9 +302,15 @@ static bool ffmpeg_init_audio(ffmpeg_t *handle, const char *audio_resampler)
    audio->codec                 = avcodec_alloc_context3(codec);
 
    audio->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+#if HAVE_CH_LAYOUT
+   audio->codec->ch_layout = (param->channels > 1)
+      ? (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO
+      : (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+#else
    audio->codec->channels       = param->channels;
    audio->codec->channel_layout = (param->channels > 1)
       ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
+#endif
 
    ffmpeg_audio_resolve_format(audio, codec);
    ffmpeg_audio_resolve_sample_rate(handle, codec);
@@ -352,9 +358,15 @@ static bool ffmpeg_init_audio(ffmpeg_t *handle, const char *audio_resampler)
    if (!audio->codec->frame_size)
       audio->codec->frame_size = 1024;
 
+#if HAVE_CH_LAYOUT
+   int nb_channels = audio->codec->ch_layout.nb_channels;
+#else
+   int nb_channels = audio->codec->channels;
+#endif
+
    audio->buffer = (uint8_t*)av_malloc(
          audio->codec->frame_size *
-         audio->codec->channels *
+         nb_channels *
          audio->sample_size);
 
    if (!audio->buffer)
@@ -869,22 +881,18 @@ static void ffmpeg_thread(void *data);
 
 static bool init_thread(ffmpeg_t *handle)
 {
-   handle->lock = slock_new();
-   handle->cond_lock = slock_new();
-   handle->cond = scond_new();
+   handle->lock       = slock_new();
+   handle->cond_lock  = slock_new();
+   handle->cond       = scond_new();
    handle->audio_fifo = fifo_new(32000 * sizeof(int16_t) *
          handle->params.channels * MAX_FRAMES / 60); /* Some arbitrary max size. */
-   handle->attr_fifo = fifo_new(sizeof(struct record_video_data) * MAX_FRAMES);
+   handle->attr_fifo  = fifo_new(sizeof(struct record_video_data) * MAX_FRAMES);
    handle->video_fifo = fifo_new(handle->params.fb_width * handle->params.fb_height *
             handle->video.pix_size * MAX_FRAMES);
 
-   handle->alive = true;
+   handle->alive     = true;
    handle->can_sleep = true;
-   handle->thread = sthread_create(ffmpeg_thread, handle);
-
-   retro_assert(handle->lock && handle->cond_lock &&
-      handle->cond && handle->audio_fifo &&
-      handle->attr_fifo && handle->video_fifo && handle->thread);
+   handle->thread    = sthread_create(ffmpeg_thread, handle);
 
    return true;
 }
@@ -1347,20 +1355,30 @@ static bool encode_audio(ffmpeg_t *handle, bool dry)
 
    frame->nb_samples     = handle->audio.frames_in_buffer;
    frame->format         = handle->audio.codec->sample_fmt;
+#if HAVE_CH_LAYOUT
+   av_channel_layout_copy(&frame->ch_layout, &handle->audio.codec->ch_layout);
+#else
    frame->channel_layout = handle->audio.codec->channel_layout;
+#endif
    frame->pts            = handle->audio.frame_cnt;
 
    planarize_audio(handle);
 
+#if HAVE_CH_LAYOUT
+   int nb_channels = handle->audio.codec->ch_layout.nb_channels;
+#else
+   int nb_channels = handle->audio.codec->channels;
+#endif
+
    samples_size          = av_samples_get_buffer_size(
          NULL,
-         handle->audio.codec->channels,
+         nb_channels,
          handle->audio.frames_in_buffer,
          handle->audio.codec->sample_fmt, 0);
 
    av_frame_get_buffer(frame, 0);
    avcodec_fill_audio_frame(frame,
-         handle->audio.codec->channels,
+         nb_channels,
          handle->audio.codec->sample_fmt,
          handle->audio.is_planar
          ? (uint8_t*)handle->audio.planar_buf :
@@ -1643,19 +1661,14 @@ static bool ffmpeg_finalize(void *data)
 
 static void ffmpeg_thread(void *data)
 {
-   size_t audio_buf_size;
-   void *audio_buf = NULL;
-   ffmpeg_t *ff    = (ffmpeg_t*)data;
+   ffmpeg_t *ff          = (ffmpeg_t*)data;
    /* For some reason, FFmpeg has a tendency to crash
     * if we don't overallocate a bit. */
-   void *video_buf = av_malloc(2 * ff->params.fb_width *
+   void *video_buf       = av_malloc(2 * ff->params.fb_width *
          ff->params.fb_height * ff->video.pix_size);
-
-   retro_assert(video_buf);
-
-   audio_buf_size = ff->config.audio_enable ?
+   size_t audio_buf_size = ff->config.audio_enable ?
       (ff->audio.codec->frame_size * ff->params.channels * sizeof(int16_t)) : 0;
-   audio_buf      = audio_buf_size ? av_malloc(audio_buf_size) : NULL;
+   void *audio_buf       = audio_buf_size ? av_malloc(audio_buf_size) : NULL;
 
    while (ff->alive)
    {

@@ -515,8 +515,10 @@ static void state_manager_push_do(state_manager_t *state)
       const uint8_t *oldb, *newb;
       uint8_t *compressed;
       size_t headpos, tailpos, remaining;
-      if (state->capacity < sizeof(size_t) + state->maxcompsize)
+      if (state->capacity < sizeof(size_t) + state->maxcompsize) {
+         RARCH_ERR("State capacity insufficient\n");
          return;
+      }
 
 recheckcapacity:;
       headpos   = state->head - state->data;
@@ -591,11 +593,10 @@ void state_manager_event_init(
 
    rewind_st->size               = 0;
    rewind_st->flags             &= ~(
-                             STATE_MGR_REWIND_ST_FLAG_FRAME_IS_REVERSED
-                           | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_CHECKED
-                           | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_PRESSED
+                                   STATE_MGR_REWIND_ST_FLAG_FRAME_IS_REVERSED
+                                 | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_CHECKED
+                                 | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_PRESSED
                                     );
-   rewind_st->flags             |= STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED;
 
    /* We cannot initialise the rewind buffer
     * unless the core info struct for the current
@@ -604,6 +605,8 @@ void state_manager_event_init(
     * core is unknown) */
    if (!core_info_get_current_core(&core_info) || !core_info)
       return;
+
+   rewind_st->flags |= STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED;
 
    if (!core_info_current_supports_rewind())
    {
@@ -617,7 +620,7 @@ void state_manager_event_init(
       return;
    }
 
-   rewind_st->size = content_get_serialized_size();
+   rewind_st->size = content_get_serialized_size_rewind();
 
    if (!rewind_st->size)
    {
@@ -638,7 +641,7 @@ void state_manager_event_init(
 
    state_manager_push_where(rewind_st->state, &state);
 
-   content_serialize_state(state, rewind_st->size);
+   content_serialize_state_rewind(state, rewind_st->size);
 
    state_manager_push_do(rewind_st->state);
 }
@@ -666,10 +669,10 @@ void state_manager_event_deinit(
    rewind_st->state              = NULL;
    rewind_st->size               = 0;
    rewind_st->flags             &= ~(
-                             STATE_MGR_REWIND_ST_FLAG_FRAME_IS_REVERSED
-                           | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_CHECKED
-                           | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_PRESSED
-                           | STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED    
+                                   STATE_MGR_REWIND_ST_FLAG_FRAME_IS_REVERSED
+                                 | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_CHECKED
+                                 | STATE_MGR_REWIND_ST_FLAG_HOTKEY_WAS_PRESSED
+                                 | STATE_MGR_REWIND_ST_FLAG_INIT_ATTEMPTED
                                     );
 
    /* Restore regular (non-rewind) core audio
@@ -746,8 +749,9 @@ bool state_manager_check_rewind(
       {
 #ifdef HAVE_NETWORKING
          /* Make sure netplay isn't confused */
-         if (!was_reversed)
-            netplay_driver_ctl(RARCH_NETPLAY_CTL_DESYNC_PUSH, NULL);
+         if (!was_reversed
+               && !netplay_driver_ctl(RARCH_NETPLAY_CTL_DESYNC_PUSH, NULL))
+            return false;
 #endif
 
          rewind_st->flags |= STATE_MGR_REWIND_ST_FLAG_FRAME_IS_REVERSED;
@@ -796,13 +800,13 @@ bool state_manager_check_rewind(
       cnt = (cnt + 1) % (rewind_granularity ?
             rewind_granularity : 1); /* Avoid possible SIGFPE. */
 
-      if ((cnt == 0) || retroarch_ctl(RARCH_CTL_BSV_MOVIE_IS_INITED, NULL))
+      if (     !is_paused
+            && ((cnt == 0) || retroarch_ctl(RARCH_CTL_BSV_MOVIE_IS_INITED, NULL)))
       {
          void *state = NULL;
-
          state_manager_push_where(rewind_st->state, &state);
 
-         content_serialize_state(state, rewind_st->size);
+         content_serialize_state_rewind(state, rewind_st->size);
 
          state_manager_push_do(rewind_st->state);
       }

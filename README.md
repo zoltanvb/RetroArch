@@ -64,51 +64,52 @@ RetroArch also emphasizes being easy to integrate into various launcher frontend
 ## Platforms
 
 RetroArch has been ported to the following platforms:
-
+   - Android (2.x to most recent version)
+   - Apple iOS
+   - Apple macOS (PPC, x86-32 and x86-64)
+   - Apple tvOS
+   - Blackberry
    - DOS
-   - Windows 11
-   - Windows 10
-   - Windows 8
-   - Windows 7
-   - Windows Vista
-   - Windows XP
-   - Windows Millennium
-   - Windows 2000
-   - Windows NT 3.5
-   - Windows 98
-   - Windows 95
-   - Linux
    - Emscripten (WebAssembly and JavaScript)
    - FreeBSD
-   - NetBSD
-   - OpenBSD
    - Haiku
-   - Solaris
-   - Apple macOS (PPC, x86-32 and x86-64)
-   - Apple iOS
-   - Apple tvOS
-   - Android (2.x to most recent version)
+   - Linux
+   - Original Microsoft Xbox
+   - Microsoft Xbox 360 (Libxenon/XeXDK)
+   - Microsoft Xbox One
+   - Microsoft Xbox Series S/X
+   - Miyoo
+   - NetBSD
+   - Nintendo NES/SNES Classic Edition
+   - Nintendo GameCube
+   - Nintendo Wii
+   - Nintendo Switch
+   - Nintendo Wii U
+   - Nintendo 3DS/2DS
+   - OpenBSD
+   - OpenDingux
    - PlayStation2
    - PlayStation3
    - PlayStation4
    - PlayStation Portable
    - PlayStation Vita
-   - Original Microsoft Xbox
-   - Microsoft Xbox 360 (Libxenon/XeXDK)
-   - Microsoft Xbox One
-   - Microsoft Xbox Series S/X
-   - Nintendo GameCube
-   - Nintendo Wii
-   - Nintendo Wii U
-   - Nintendo 3DS/2DS
-   - Nintendo Switch
-   - Nintendo NES/SNES Classic Edition
    - Raspberry Pi
-   - Blackberry
-   - OpenDingux
-   - Miyoo
-   - RS90
+   - ReactOS
    - RetroFW
+   - RS90
+   - SerenityOS
+   - Solaris
+   - Windows NT 3.5
+   - Windows 95
+   - Windows 98
+   - Windows 2000
+   - Windows XP
+   - Windows Millennium
+   - Windows Vista
+   - Windows 7
+   - Windows 8
+   - Windows 10
+   - Windows 11
 
 ## Dependencies (PC)
 
@@ -202,7 +203,7 @@ A sample configuration file is installed to `/etc/retroarch.cfg`. This is the sy
 RetroArch will on startup create a config file in `$XDG\_CONFIG\_HOME/retroarch/retroarch.cfg` if it does not exist.
 Users only need to configure a certain option if the desired value deviates from the value defined in config.def.h.
 
-To configure joypads, use the built-in menu or the `retroarch-joyconfig` command-line tool.
+To configure joypads, use the built-in menu or manually configure them in `retroarch.cfg`.
 
 ## Compiling and installing
 
@@ -335,7 +336,7 @@ The links below belong to our official channels. Links other than this may have 
 - [YouTube Topic](https://www.youtube.com/channel/UC5q007PYyQPgin0HHbzF0zQ)
 - [Patreon](https://www.patreon.com/libretro)
 - [BOUNTYSOURCE](https://www.bountysource.com/teams/libretro/issues)
-- [Discord](https://discord.gg/27Xxm2h)
+- [Discord](https://discord.com/invite/VZ2b7wghxR)
 - [Teespring](https://teespring.com/stores/retroarch)
 - [Documentation](https://docs.libretro.com/)
 - [Forum](https://forums.libretro.com/)

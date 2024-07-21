@@ -136,6 +136,7 @@ if [ "$HAVE_EGL" = 'yes' ]; then
    EGL_LIBS="$EGL_LIBS $EXTRA_GL_LIBS"
 fi
 
+check_header '' XDELTA lzma.h
 check_lib '' SSA '-lfribidi -lass' ass_library_init
 check_lib '' SSE '-msse -msse2'
 check_pkgconf EXYNOS libdrm_exynos
@@ -153,6 +154,8 @@ fi
 }
 
 add_define MAKEFILE ASSETS_DIR "${ASSETS_DIR:-$SHARE_DIR}/retroarch"
+add_define MAKEFILE FILTERS_DIR "${FILTERS_DIR:-$SHARE_DIR}/retroarch"
+add_define MAKEFILE CORE_INFO_DIR "${CORE_INFO_DIR:-$SHARE_DIR}/retroarch"
 add_define MAKEFILE BIN_DIR "${BIN_DIR:-${PREFIX}/bin}"
 add_define MAKEFILE DOC_DIR "${DOC_DIR:-${SHARE_DIR}/doc/retroarch}"
 add_define MAKEFILE MAN_DIR "${MAN_DIR:-${SHARE_DIR}/man}"
@@ -242,13 +245,10 @@ check_platform Darwin METAL 'Metal is' true
 if [ "$OS" = 'Darwin' ]; then
    check_lib '' COREAUDIO "-framework AudioUnit" AudioUnitInitialize
    check_lib '' CORETEXT "-framework CoreText" CTFontCreateWithName
+   add_opt CRTSWITCHRES no
 
    if [ "$HAVE_METAL" = yes ]; then
       check_lib '' COCOA_METAL "-framework AppKit" NSApplicationMain
-      add_opt OPENGL no
-      add_opt OPENGL1 no
-      add_opt OPENGL_CORE no
-      die : 'Notice: Metal cannot coexist with OpenGL (yet), so disabling OpenGL.'
    else
       check_lib '' COCOA "-framework AppKit" NSApplicationMain
    fi
@@ -316,16 +316,15 @@ check_enabled SSL BUILTINMBEDTLS 'builtin mbedtls' 'ssl is' false
 check_enabled SSL BUILTINBEARSSL 'builtin bearssl' 'ssl is' false
 
 if [ "$HAVE_SYSTEMMBEDTLS" = "auto" ]; then SYSTEMMBEDTLS_IS_AUTO=yes; else SYSTEMMBEDTLS_IS_AUTO=no; fi
-check_lib '' SYSTEMMBEDTLS '-lmbedtls -lmbedx509 -lmbedcrypto'
-check_header '' SYSTEMMBEDTLS \
-   mbedtls/config.h \
-   mbedtls/certs.h \
-   mbedtls/debug.h \
-   mbedtls/platform.h \
-   mbedtls/net_sockets.h \
-   mbedtls/ssl.h \
-   mbedtls/ctr_drbg.h \
-   mbedtls/entropy.h
+check_val '' SYSTEMMBEDTLS '-lmbedtls' 'mbedtls' mbedtls 2.5.1 '' true
+check_val '' SYSTEMMBEDX509 '-lmbedx509' 'mbedtls' mbedx509 2.5.1 '' true
+check_val '' SYSTEMMBEDCRYPTO '-lmbedcrypto' 'mbedtls' mbedcrypto 2.5.1 '' true
+if [ "$HAVE_SYSTEMMBEDTLS" = 'yes' ] && [ -z "$SYSTEMMBEDTLS_VERSION" ]; then
+  # Ancient versions (such as the one included in the Ubuntu version used for
+  # build checks) don't have this header
+  check_header '' SYSTEMMBEDTLS mbedtls/net_sockets.h
+fi
+if [ "$HAVE_SYSTEMMBEDX509" = 'no' ] || [ "$HAVE_SYSTEMMBEDCRYPTO" = 'no' ]; then HAVE_SYSTEMMBEDTLS=no; fi
 if [ "$SYSTEMMBEDTLS_IS_AUTO" = "yes" ] && [ "$HAVE_SYSTEMMBEDTLS" = "yes" ]; then HAVE_SYSTEMMBEDTLS=auto; fi
 
 SSL_BACKEND_CHOSEN=no
@@ -505,6 +504,7 @@ if [ "$HAVE_X11" != 'no' ]; then
    check_val '' XCB -lxcb '' xcb '' '' false
    check_val '' XEXT -lXext '' xext '' '' false
    check_val '' XF86VM -lXxf86vm '' xxf86vm '' '' false
+   check_val '' XSCRNSAVER -lXss '' xscrnsaver '' '' false
 else
    die : 'Notice: X11 not present. Skipping X11 code paths.'
 fi
@@ -523,7 +523,7 @@ check_header '' XSHM X11/Xlib.h X11/extensions/XShm.h
 check_val '' XKBCOMMON -lxkbcommon '' xkbcommon 0.3.2 '' false
 check_val '' WAYLAND '-lwayland-egl -lwayland-client' '' wayland-egl 10.1.0 '' false
 check_val '' WAYLAND_CURSOR -lwayland-cursor '' wayland-cursor 1.12 '' false
-check_pkgconf WAYLAND_PROTOS wayland-protocols 1.15
+check_pkgconf WAYLAND_PROTOS wayland-protocols 1.31
 check_pkgconf WAYLAND_SCANNER wayland-scanner '1.15 1.12'
 
 if [ "$HAVE_WAYLAND_SCANNER" = yes ] &&

@@ -34,7 +34,7 @@
 
 /* Pixel ticker nominally increases by one after each
  * TICKER_PIXEL_PERIOD ms (actual increase depends upon
- * ticker speed setting and display resolution) 
+ * ticker speed setting and display resolution)
  *
  * Formula is: (1.0f / 60.0f) * 1000.0f
  * */
@@ -341,22 +341,22 @@ static void gfx_animation_ticker_loop(uint64_t idx,
 {
    int ticker_period     = (int)(str_width + spacer_width);
    int phase             = idx % ticker_period;
-   
+
    /* Output offsets/widths are unsigned size_t, but it's
     * easier to perform the required calculations with ints,
     * so create some temporary variables... */
    /* Looping text is composed of up to three strings,
     * where string 1 and 2 are different regions of the
     * source text and string 2 is a spacer:
-    * 
+    *
     *     |-----max_width-----|
     * [string 1][string 2][string 3]
-    * 
+    *
     * The following implementation could probably be optimised,
     * but any performance gains would be trivial compared with
     * all the string manipulation that has to happen afterwards...
     */
-   
+
    /* String 1 */
    int offset = 0;
    int width  = (int)(str_width - phase);
@@ -364,13 +364,13 @@ static void gfx_animation_ticker_loop(uint64_t idx,
       width   = 0;
    else if ((width > (int)max_width))
       width   = (int)max_width;
-  
+
    if (phase < (int)str_width)
       offset  = phase;
-   
+
    *offset1   = offset;
    *width1    = width;
-   
+
    /* String 2 */
    offset     = (int)(phase - str_width);
    if (offset < 0)
@@ -379,15 +379,15 @@ static void gfx_animation_ticker_loop(uint64_t idx,
    if (width > (int)spacer_width)
       width   = (int)spacer_width;
    width     -= offset;
-   
+
    *offset2   = offset;
    *width2    = width;
-   
+
    /* String 3 */
    width      = (int)(max_width - (*width1 + *width2));
    if (width < 0)
       width   = 0;
-   
+
    /* Note: offset is always zero here so offset3 is
     * unnecessary - but include it anyway to preserve
     * symmetry... */
@@ -504,7 +504,7 @@ static void gfx_animation_ticker_smooth_loop_fw(uint64_t idx,
    /* Looping text is composed of up to three strings,
     * where string 1 and 2 are different regions of the
     * source text and string 2 is a spacer:
-    * 
+    *
     *     |----field_width----|
     * [string 1][string 2][string 3]
     */
@@ -702,7 +702,7 @@ static void gfx_animation_ticker_smooth_loop(uint64_t idx,
    /* Looping text is composed of up to three strings,
     * where string 1 and 2 are different regions of the
     * source text and string 2 is a spacer:
-    * 
+    *
     *     |----field_width----|
     * [string 1][string 2][string 3]
     */
@@ -1015,7 +1015,7 @@ static void gfx_animation_line_ticker_smooth_loop(uint64_t idx,
 
 static void gfx_delayed_animation_cb(void *userdata)
 {
-   gfx_delayed_animation_t *delayed_animation = 
+   gfx_delayed_animation_t *delayed_animation =
       (gfx_delayed_animation_t*) userdata;
 
    gfx_animation_push(&delayed_animation->entry);
@@ -1189,7 +1189,7 @@ bool gfx_animation_update(
 {
    unsigned i;
    gfx_animation_t *p_anim                     = &anim_st;
-   const bool ticker_is_active                 = p_anim->flags & GFX_ANIM_FLAG_TICKER_IS_ACTIVE;
+   const bool ticker_is_active                 = (p_anim->flags & GFX_ANIM_FLAG_TICKER_IS_ACTIVE) ? true : false;
 
    static retro_time_t last_clock_update       = 0;
    static retro_time_t last_ticker_update      = 0;
@@ -1216,8 +1216,8 @@ bool gfx_animation_update(
    /* Note: cur_time & old_time are in us (microseconds),
     * delta_time is in ms */
    p_anim->cur_time                            = current_time;
-   p_anim->delta_time                          = (p_anim->old_time == 0) 
-      ? 0.0f 
+   p_anim->delta_time                          = (p_anim->old_time == 0)
+      ? 0.0f
       : (float)(p_anim->cur_time - p_anim->old_time) / 1000.0f;
    p_anim->old_time                            = p_anim->cur_time;
 
@@ -1356,67 +1356,53 @@ bool gfx_animation_update(
    return ((p_anim->flags & GFX_ANIM_FLAG_IS_ACTIVE) > 0);
 }
 
-static void build_ticker_loop_string(
+static size_t build_ticker_loop_string(
       const char* src_str, const char *spacer,
       size_t char_offset1, size_t num_chars1,
       size_t char_offset2, size_t num_chars2,
       size_t char_offset3, size_t num_chars3,
-      char *dest_str, size_t dest_str_len)
+      char *s, size_t len)
 {
+   size_t _len = 0;
    /* Copy 'trailing' chunk of source string, if required */
    if (num_chars1 > 0)
-      utf8cpy(
-            dest_str, dest_str_len,
+      _len += utf8cpy(s + _len, len - _len,
             utf8skip(src_str, char_offset1), num_chars1);
-   else
-      dest_str[0] = '\0';
-
    /* Copy chunk of spacer string, if required */
    if (num_chars2 > 0)
-   {
-      char tmp[PATH_MAX_LENGTH];
-      utf8cpy(
-            tmp, sizeof(tmp),
+      _len += utf8cpy(s + _len, len - _len,
             utf8skip(spacer, char_offset2), num_chars2);
-
-      strlcat(dest_str, tmp, dest_str_len);
-   }
-
    /* Copy 'leading' chunk of source string, if required */
    if (num_chars3 > 0)
-   {
-      char tmp[PATH_MAX_LENGTH];
-      utf8cpy(
-            tmp, sizeof(tmp),
+      _len += utf8cpy(s + _len, len - _len,
             utf8skip(src_str, char_offset3), num_chars3);
-
-      strlcat(dest_str, tmp, dest_str_len);
-   }
+   return _len;
 }
 
-static void build_line_ticker_string(
+static size_t build_line_ticker_string(
       size_t num_display_lines, size_t line_offset,
-      struct string_list *lines,
-      char *dest_str, size_t dest_str_len)
+      struct string_list *lines, size_t lines_size,
+      char *s, size_t len)
 {
    size_t i;
-
+   size_t _len = 0;
    for (i = 0; i < (num_display_lines-1); i++)
    {
       size_t offset     = i + line_offset;
-      size_t line_index = offset % (lines->size + 1);
+      size_t line_index = offset % (lines_size + 1);
       /* Is line valid? */
-      if (line_index < lines->size)
-         strlcat(dest_str, lines->elems[line_index].data, dest_str_len);
-      strlcat(dest_str, "\n", dest_str_len);
+      if (line_index < lines_size)
+         _len += strlcpy(s + _len, lines->elems[line_index].data, len - _len);
+      _len    += strlcpy(s + _len, "\n", len - _len);
    }
    {
       size_t offset     = (num_display_lines-1) + line_offset;
-      size_t line_index = offset % (lines->size + 1);
+      size_t line_index = offset % (lines_size + 1);
       /* Is line valid? */
-      if (line_index < lines->size)
-         strlcat(dest_str, lines->elems[line_index].data, dest_str_len);
+      if (line_index < lines_size)
+         _len += strlcpy(s + _len, lines->elems[line_index].data, len - _len);
    }
+   return _len;
 }
 
 bool gfx_animation_ticker(gfx_animation_ctx_ticker_t *ticker)
@@ -1440,10 +1426,10 @@ bool gfx_animation_ticker(gfx_animation_ctx_ticker_t *ticker)
    {
       size_t len = utf8cpy(ticker->s,
             PATH_MAX_LENGTH, ticker->str, ticker->len - 3);
-      ticker->s[len  ] = '.';
-      ticker->s[len+1] = '.';
-      ticker->s[len+2] = '.';
-      ticker->s[len+3] = '\0';
+      ticker->s[  len] = '.';
+      ticker->s[++len] = '.';
+      ticker->s[++len] = '.';
+      ticker->s[++len] = '\0';
       return false;
    }
 
@@ -1547,13 +1533,12 @@ static bool gfx_animation_ticker_smooth_fw(
 
       /* Determine number of characters to copy */
       num_chars = (ticker->field_width - suffix_width) / glyph_width;
-
       /* Copy string segment + add suffix */
-      _len = utf8cpy(ticker->dst_str, ticker->dst_str_len, ticker->src_str, num_chars);
-      ticker->dst_str[_len  ] = '.';
-      ticker->dst_str[_len+1] = '.';
-      ticker->dst_str[_len+2] = '.';
-      ticker->dst_str[_len+3] = '\0';
+      _len      = utf8cpy(ticker->dst_str, ticker->dst_str_len, ticker->src_str, num_chars);
+      ticker->dst_str[  _len] = '.';
+      ticker->dst_str[++_len] = '.';
+      ticker->dst_str[++_len] = '.';
+      ticker->dst_str[++_len] = '\0';
 
       if (ticker->dst_str_width)
          *ticker->dst_str_width = (num_chars * glyph_width) + suffix_width;
@@ -1759,10 +1744,10 @@ bool gfx_animation_ticker_smooth(gfx_animation_ctx_ticker_smooth_t *ticker)
       /* Copy string segment + add suffix */
       _len = utf8cpy(ticker->dst_str, ticker->dst_str_len,
             ticker->src_str, num_chars);
-      ticker->dst_str[_len  ] = '.';
-      ticker->dst_str[_len+1] = '.';
-      ticker->dst_str[_len+2] = '.';
-      ticker->dst_str[_len+3] = '\0';
+      ticker->dst_str[  _len] = '.';
+      ticker->dst_str[++_len] = '.';
+      ticker->dst_str[++_len] = '.';
+      ticker->dst_str[++_len] = '\0';
 
       if (ticker->dst_str_width)
          *ticker->dst_str_width = current_width + (3 * period_width);
@@ -1901,15 +1886,15 @@ bool gfx_animation_line_ticker(gfx_animation_ctx_line_ticker_t *line_ticker)
    if (!line_ticker)
       return false;
 
-   if (string_is_empty(line_ticker->str) ||
-       (line_ticker->line_len < 1) ||
-       (line_ticker->max_lines < 1))
+   if (    string_is_empty(line_ticker->str)
+       || (line_ticker->line_len  < 1)
+       || (line_ticker->max_lines < 1))
       goto end;
 
    /* Line wrap input string */
    line_ticker_str_len = strlen(line_ticker->str);
    wrapped_str_len     = line_ticker_str_len + 1 + 10; /* 10 bytes use for inserting '\n' */
-   if (!(wrapped_str = (char*)malloc(wrapped_str_len)))
+   if (!(wrapped_str   = (char*)malloc(wrapped_str_len)))
       goto end;
    wrapped_str[0] = '\0';
 
@@ -1960,7 +1945,7 @@ bool gfx_animation_line_ticker(gfx_animation_ctx_line_ticker_t *line_ticker)
 
    /* Build output string from required lines */
    build_line_ticker_string(
-      line_ticker->max_lines, line_offset, &lines,
+      line_ticker->max_lines, line_offset, &lines, lines.size,
       line_ticker->s, line_ticker->len);
 
    success                  = true;
@@ -2003,7 +1988,7 @@ bool gfx_animation_line_ticker_smooth(gfx_animation_ctx_line_ticker_smooth_t *li
    gfx_animation_t *p_anim        = &anim_st;
    const char *wideglyph_str      = NULL;
    int wideglyph_width            = 100;
-   void (*word_wrap_func)(char *dst, size_t dst_size,
+   size_t (*word_wrap_func)(char *dst, size_t dst_size,
          const char *src, size_t src_len,
          int line_width, int wideglyph_width, unsigned max_lines);
 
@@ -2011,10 +1996,10 @@ bool gfx_animation_line_ticker_smooth(gfx_animation_ctx_line_ticker_smooth_t *li
    if (!line_ticker)
       return false;
 
-   if (!line_ticker->font ||
-       string_is_empty(line_ticker->src_str) ||
-       (line_ticker->field_width < 1) ||
-       (line_ticker->field_height < 1))
+   if (  !line_ticker->font
+       || string_is_empty(line_ticker->src_str)
+       || (line_ticker->field_width < 1)
+       || (line_ticker->field_height < 1))
       goto end;
 
    /* Get font dimensions */
@@ -2035,7 +2020,7 @@ bool gfx_animation_line_ticker_smooth(gfx_animation_ctx_line_ticker_smooth_t *li
       int new_glyph_width = font_driver_get_message_width(
          line_ticker->font, wideglyph_str, strlen(wideglyph_str),
          line_ticker->font_scale);
-      
+
       if (new_glyph_width > 0)
          wideglyph_width  = new_glyph_width * 100 / glyph_width;
       word_wrap_func      = word_wrap_wideglyph;
@@ -2139,22 +2124,19 @@ bool gfx_animation_line_ticker_smooth(gfx_animation_ctx_line_ticker_smooth_t *li
 
    /* Build output string from required lines */
    build_line_ticker_string(
-         num_display_lines, line_offset, &lines,
+         num_display_lines, line_offset, &lines, lines.size,
          line_ticker->dst_str, line_ticker->dst_str_len);
 
    /* Extract top/bottom fade strings, if required */
    if (fade_active)
    {
-      /* We waste a handful of clock cycles by using
-       * build_line_ticker_string() here, but it saves
-       * rewriting a heap of code... */
-      build_line_ticker_string(
-            1, top_fade_line_offset, &lines,
-            line_ticker->top_fade_str, line_ticker->top_fade_str_len);
-
-      build_line_ticker_string(
-            1, bottom_fade_line_offset, &lines,
-            line_ticker->bottom_fade_str, line_ticker->bottom_fade_str_len);
+      size_t top_fade_line_index    = top_fade_line_offset    % (lines.size + 1);
+      size_t bottom_fade_line_index = bottom_fade_line_offset % (lines.size + 1);
+      /* Is line valid? */
+      if (top_fade_line_index < lines.size)
+         strlcpy(line_ticker->top_fade_str, lines.elems[top_fade_line_index].data, line_ticker->top_fade_str_len);
+      if (bottom_fade_line_index < lines.size)
+         strlcpy(line_ticker->bottom_fade_str, lines.elems[bottom_fade_line_index].data, line_ticker->bottom_fade_str_len);
    }
 
    success                  = true;
@@ -2216,7 +2198,7 @@ bool gfx_animation_kill_by_tag(uintptr_t *tag)
       if (p_anim->flags & GFX_ANIM_FLAG_IN_UPDATE)
       {
          t->deleted              = true;
-	 p_anim->flags          |= GFX_ANIM_FLAG_PENDING_DELETES;
+         p_anim->flags          |= GFX_ANIM_FLAG_PENDING_DELETES;
       }
       else
       {

@@ -40,6 +40,7 @@
 #include "../ui/ui_companion_driver.h"
 #include "../gfx/video_display_server.h"
 #endif
+#include "../retroarch.h"
 #include "../verbosity.h"
 #include "task_database_cue.h"
 
@@ -89,13 +90,76 @@ static const char *database_info_get_current_element_name(
 {
    if (!handle || !handle->list)
       return NULL;
+#if 1
+   /* Don't skip pruned entries, otherwise iteration
+    * ends prematurely */
+   if (!handle->list->elems[handle->list_ptr].data)
+      return "";
+#else
    /* Skip pruned entries */
    while (!handle->list->elems[handle->list_ptr].data)
    {
       if (++handle->list_ptr >= handle->list->size)
          return NULL;
    }
+#endif
    return handle->list->elems[handle->list_ptr].data;
+}
+
+static void task_database_scan_console_output(const char *label, const char *db_name, bool add)
+{
+   const char *prefix   = (add) ? "++" : (db_name) ? "==" : "??";
+   const char *no_color = getenv("NO_COLOR");
+   char string[32];
+   bool color           = (no_color && no_color[0] != '0') ? false : true;
+
+   /* Colorize prefix (add = green, dupe = yellow, not found = red) */
+#ifdef _WIN32
+   HANDLE con      = GetStdHandle(STD_OUTPUT_HANDLE);
+   if (color && con != INVALID_HANDLE_VALUE)
+   {
+      unsigned red    = FOREGROUND_RED;
+      unsigned green  = FOREGROUND_GREEN;
+      unsigned yellow = FOREGROUND_RED | FOREGROUND_GREEN;
+      unsigned reset  = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+      size_t _len     = strlcpy(string, " ", sizeof(string));
+      _len += strlcpy(string + _len, prefix, sizeof(string) - _len);
+      strlcpy(string + _len, " ", sizeof(string) - _len);
+      SetConsoleTextAttribute(con, (add) ? green : (db_name) ? yellow : red);
+      WriteConsole(con, string, strlen(string), NULL, NULL);
+      SetConsoleTextAttribute(con, reset);
+   }
+#else
+   if (color)
+   {
+      const char *red    = "\x1B[31m";
+      const char *green  = "\x1B[32m";
+      const char *yellow = "\x1B[33m";
+      const char *reset  = "\x1B[0m";
+      size_t _len        = 0;
+      if (add)
+         _len += strlcpy(string + _len, green, sizeof(string) - _len);
+      else
+         _len += strlcpy(string + _len, (db_name) ? yellow : red, sizeof(string) - _len);
+      _len    += strlcpy(string + _len, " ",    sizeof(string) - _len);
+      _len    += strlcpy(string + _len, prefix, sizeof(string) - _len);
+      _len    += strlcpy(string + _len, " ",    sizeof(string) - _len);
+      strlcpy(string + _len, reset,  sizeof(string) - _len);
+      fputs(string, stdout);
+   }
+#endif
+   else
+   {
+      size_t _len     = strlcpy(string, " ", sizeof(string));
+      _len += strlcpy(string + _len, prefix, sizeof(string) - _len);
+      strlcpy(string + _len, " ", sizeof(string) - _len);
+      fputs(string, stdout);
+   }
+
+   if (!db_name)
+      printf("\"%s\"\n", label);
+   else
+      printf("\"%s / %s\"\n", db_name, label);
 }
 
 static int task_database_iterate_start(retro_task_t *task,
@@ -103,16 +167,16 @@ static int task_database_iterate_start(retro_task_t *task,
       const char *name)
 {
    char msg[256];
-   const char *basename_path = !string_is_empty(name) ?
-      path_basename_nocompression(name) : "";
+   const char *basename_path = !string_is_empty(name)
+         ? path_basename_nocompression(name) : "";
 
    msg[0] = '\0';
 
-   snprintf(msg, sizeof(msg),
-         STRING_REP_USIZE "/" STRING_REP_USIZE ": %s %s...\n",
-         (size_t)db->list_ptr,
+   if (!string_is_empty(basename_path))
+      snprintf(msg, sizeof(msg),
+         STRING_REP_USIZE "/" STRING_REP_USIZE ": %s..\n",
+         db->list_ptr + 1,
          (size_t)db->list->size,
-         msg_hash_to_str(MSG_SCANNING),
          basename_path);
 
    if (!string_is_empty(msg))
@@ -124,6 +188,9 @@ static int task_database_iterate_start(retro_task_t *task,
          task_set_progress(task,
                roundf((float)db->list_ptr /
                   ((float)db->list->size / 100.0f)));
+      RARCH_LOG("[Scanner]: %s", msg);
+      if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+         printf("%s", msg);
 #else
       fprintf(stderr, "msg: %s\n", msg);
 #endif
@@ -139,52 +206,62 @@ static int intfstream_get_serial(intfstream_t *fd, char *serial, size_t serial_l
    const char *system_name = NULL;
    if (detect_system(fd, &system_name, filename) >= 1)
    {
-      if (string_is_equal(system_name, "Sony - PlayStation Portable"))
+      size_t system_len = strlen(system_name);
+      if (string_starts_with_size(system_name, "Sony", STRLEN_CONST("Sony")))
       {
-         if (detect_psp_game(fd, serial, serial_len, filename) != 0)
-            return 1;
+         if (string_is_equal_fast(system_name, "Sony - PlayStation Portable", system_len))
+         {
+            if (detect_psp_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
+         else if (string_is_equal_fast(system_name, "Sony - PlayStation", system_len))
+         {
+            if (detect_ps1_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
+         else if (string_is_equal_fast(system_name, "Sony - PlayStation 2", system_len))
+         {
+            if (detect_ps2_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
       }
-      else if (string_is_equal(system_name, "Sony - PlayStation"))
+      else if (string_starts_with_size(system_name, "Nintendo", STRLEN_CONST("Nintendo")))
       {
-         if (detect_ps1_game(fd, serial, serial_len, filename) != 0)
-            return 1;
+         if (string_is_equal_fast(system_name, "Nintendo - GameCube", system_len))
+         {
+            if (detect_gc_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
+         else if (string_is_equal_fast(system_name, "Nintendo - Wii", system_len))
+         {
+            if (detect_wii_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
       }
-      else if (string_is_equal(system_name, "Sony - PlayStation 2"))
+      else if (string_starts_with_size(system_name, "Sega", STRLEN_CONST("Sega")))
       {
-         if (detect_ps2_game(fd, serial, serial_len, filename) != 0)
-            return 1;
-      }
-      else if (string_is_equal(system_name, "Nintendo - GameCube"))
-      {
-         if (detect_gc_game(fd, serial, serial_len, filename) != 0)
-            return 1;
-      }
-      else if (string_is_equal(system_name, "Sega - Mega-CD - Sega CD"))
-      {
-         if (detect_scd_game(fd, serial, serial_len, filename) != 0)
-            return 1;
-      }
-      else if (string_is_equal(system_name, "Sega - Saturn"))
-      {
-         if (detect_sat_game(fd, serial, serial_len, filename) != 0)
-            return 1;
-      }
-      else if (string_is_equal(system_name, "Sega - Dreamcast"))
-      {
-         if (detect_dc_game(fd, serial, serial_len, filename) != 0)
-            return 1;
-      }
-      else if (string_is_equal(system_name, "Nintendo - Wii"))
-      {
-         if (detect_wii_game(fd, serial, serial_len, filename) != 0)
-            return 1;
+         if (string_is_equal_fast(system_name, "Sega - Mega-CD - Sega CD", system_len))
+         {
+            if (detect_scd_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
+         else if (string_is_equal_fast(system_name, "Sega - Saturn", system_len))
+         {
+            if (detect_sat_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
+         else if (string_is_equal_fast(system_name, "Sega - Dreamcast", system_len))
+         {
+            if (detect_dc_game(fd, serial, serial_len, filename) != 0)
+               return 1;
+         }
       }
    }
    return 0;
 }
 
 static bool intfstream_file_get_serial(const char *name,
-      uint64_t offset, uint64_t size, char *serial, size_t serial_len)
+      uint64_t offset, size_t size, char *serial, size_t serial_len)
 {
    int rv;
    uint8_t *data     = NULL;
@@ -206,12 +283,12 @@ static bool intfstream_file_get_serial(const char *name,
    if (file_size < 0)
       goto error;
 
-   if (offset != 0 || size < (uint64_t) file_size)
+   if (offset != 0 || size < (size_t) file_size)
    {
       if (intfstream_seek(fd, (int64_t)offset, SEEK_SET) == -1)
          goto error;
 
-      data = (uint8_t*)malloc((size_t)size);
+      data = (uint8_t*)malloc(size);
 
       if (intfstream_read(fd, data, size) != (int64_t) size)
       {
@@ -245,10 +322,10 @@ error:
 static int task_database_cue_get_serial(const char *name, char* serial, size_t serial_len)
 {
    char track_path[PATH_MAX_LENGTH];
-   uint64_t offset                  = 0;
-   uint64_t size                    = 0;
+   uint64_t offset  = 0;
+   size_t size      = 0;
 
-   track_path[0]                    = '\0';
+   track_path[0]    = '\0';
 
    if (cue_find_track(name, true, &offset, &size, track_path,
             sizeof(track_path)) < 0)
@@ -362,7 +439,7 @@ static int task_database_cue_get_crc(const char *name, uint32_t *crc)
 {
    char track_path[PATH_MAX_LENGTH];
    uint64_t offset  = 0;
-   uint64_t size    = 0;
+   size_t size      = 0;
 
    track_path[0]    = '\0';
 
@@ -376,7 +453,7 @@ static int task_database_cue_get_crc(const char *name, uint32_t *crc)
       return 0;
    }
 
-   return intfstream_file_get_crc(track_path, offset, (size_t)size, crc);
+   return intfstream_file_get_crc(track_path, offset, size, crc);
 }
 
 static int task_database_gdi_get_crc(const char *name, uint32_t *crc)
@@ -488,9 +565,9 @@ static enum msg_file_type extension_to_file_type(const char *ext)
    string_to_lower(ext_lower);
 
    if (
-         string_is_equal(ext_lower, "7z")  ||
-         string_is_equal(ext_lower, "zip") ||
-         string_is_equal(ext_lower, "apk")
+            string_is_equal(ext_lower, "7z")
+         || string_is_equal(ext_lower, "zip")
+         || string_is_equal(ext_lower, "apk")
       )
       return FILE_TYPE_COMPRESSED;
    if (
@@ -557,9 +634,7 @@ static int task_database_iterate_playlist(
       case FILE_TYPE_GDI:
          gdi_prune(db, name);
          db_state->serial[0] = '\0';
-         /* There are no serial databases, so don't bother with
-            serials at the moment */
-         if (0 && task_database_gdi_get_serial(name, db_state->serial, sizeof(db_state->serial)))
+         if (task_database_gdi_get_serial(name, db_state->serial, sizeof(db_state->serial)))
             db->type = DATABASE_TYPE_SERIAL_LOOKUP;
          else
          {
@@ -606,6 +681,8 @@ static int database_info_list_iterate_end_no_match(
 {
    /* Reached end of database list,
     * CRC match probably didn't succeed. */
+   if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+      task_database_scan_console_output(path, NULL, false);
 
    /* If this was a compressed file and no match in the database
     * list was found then expand the search list to include the
@@ -719,8 +796,10 @@ static int database_info_list_iterate_found_match(
 
    if (!string_is_empty(db_state->serial))
    {
-      if (snprintf(db_crc, str_len, "%s|serial", db_state->serial) < 0)
-         RARCH_ERR("Serial string encoding error\n");
+      size_t _len = strlcpy(db_crc, db_state->serial, str_len);
+      strlcpy(db_crc  + _len,
+            "|serial",
+            str_len   - _len);
    }
    else
       snprintf(db_crc, str_len, "%08lX|crc", (unsigned long)db_info_entry->crc32);
@@ -734,7 +813,7 @@ static int database_info_list_iterate_found_match(
       strlcpy(entry_label, db_info_entry->name, str_len);
    else if (!string_is_empty(entry_path))
    {
-      char *delim = strchr(entry_path, '#');
+      char *delim = (char*)strchr(entry_path, '#');
 
       if (delim)
          *delim = '\0';
@@ -742,7 +821,7 @@ static int database_info_list_iterate_found_match(
             path_basename_nocompression(entry_path), "", str_len);
       path_remove_extension(entry_label);
 
-      RARCH_LOG("[Database]: No match for: \"%s\", CRC: 0x%08X\n", entry_path_str, db_state->crc);
+      RARCH_LOG("[Scanner]: No match for: \"%s\", CRC: 0x%08X\n", entry_path_str, db_state->crc);
    }
 
    if (!string_is_empty(archive_name))
@@ -754,19 +833,7 @@ static int database_info_list_iterate_found_match(
        (hash = strchr(entry_path_str, '#')))
        *hash = '\0';
 
-#if defined(RARCH_INTERNAL)
-#if 0
-   RARCH_LOG("Found match in database !\n");
-
-   RARCH_LOG("Path: %s\n", db_path);
-   RARCH_LOG("CRC : %s\n", db_crc);
-   RARCH_LOG("Playlist Path: %s\n", db_playlist_path);
-   RARCH_LOG("Entry Path: %s\n", entry_path);
-   RARCH_LOG("Playlist not NULL: %d\n", playlist != NULL);
-   RARCH_LOG("ZIP entry: %s\n", archive_name);
-   RARCH_LOG("entry path str: %s\n", entry_path_str);
-#endif
-#else
+#if !defined(RARCH_INTERNAL)
    fprintf(stderr, "Found match in database !\n");
 
    fprintf(stderr, "Path: %s\n", db_path);
@@ -805,7 +872,12 @@ static int database_info_list_iterate_found_match(
       entry.last_played_second= 0;
 
       playlist_push(playlist, &entry);
+      RARCH_LOG("[Scanner]: Add \"%s\" to \"%s\"\n", entry_label, entry.db_name);
+      if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+         task_database_scan_console_output(entry_label, path_remove_extension(db_playlist_base_str), true);
    }
+   else if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+      task_database_scan_console_output(entry_label, path_remove_extension(db_playlist_base_str), false);
 
    playlist_write_file(playlist);
    playlist_free(playlist);
@@ -840,8 +912,7 @@ static int database_info_list_iterate_found_match(
 /* End of entries in database info list and didn't find a
  * match, go to the next database. */
 static int database_info_list_iterate_next(
-      database_state_handle_t *db_state
-      )
+      database_state_handle_t *db_state)
 {
    db_state->list_index++;
    db_state->entry_index = 0;
@@ -915,10 +986,6 @@ static int task_database_iterate_crc_lookup(
 
       if (db_info_entry && db_info_entry->crc32)
       {
-#if 0
-         RARCH_LOG("CRC32: 0x%08X , entry CRC32: 0x%08X (%s).\n",
-               db_state->crc, db_info_entry->crc32, db_info_entry->name);
-#endif
          if (db_state->archive_crc == db_info_entry->crc32)
             return database_info_list_iterate_found_match(
                   _db,
@@ -1009,12 +1076,31 @@ static int task_database_iterate_playlist_lutro(
    return 0;
 }
 
+static bool task_database_check_serial_and_crc(
+      database_state_handle_t *db_state)
+{
+#ifdef RARCH_INTERNAL
+   settings_t *settings                    = config_get_ptr();
+#endif
+   const char         *db_path    =
+      database_info_get_current_name(db_state);
+
+#ifdef RARCH_INTERNAL
+   if (!settings->bools.scan_serial_and_crc)
+       return false;
+#endif
+
+   /* the PSP shares serials for disc/download content */
+   return string_starts_with(
+         path_basename_nocompression(db_path),
+         "Sony - PlayStation Portable");
+}
+
 static int task_database_iterate_serial_lookup(
       db_handle_t *_db,
       database_state_handle_t *db_state,
       database_info_handle_t *db, const char *name,
-      bool path_contains_compressed_file
-      )
+      bool path_contains_compressed_file)
 {
    if (
          !db_state->list ||
@@ -1034,11 +1120,11 @@ static int task_database_iterate_serial_lookup(
       if (!serial_buf)
          return 1;
 
-      strlcpy(query, "{'serial': b'", sizeof(query));
-      _len          = strlcat(query, serial_buf, sizeof(query));
-      query[_len  ] = '\'';
-      query[_len+1] = '}';
-      query[_len+2] = '\0';
+      _len  = strlcpy(query, "{'serial': b'", sizeof(query));
+      _len += strlcpy(query + _len, serial_buf, sizeof(query) - _len);
+      query[  _len] = '\'';
+      query[++_len] = '}';
+      query[++_len] = '\0';
       database_info_list_iterate_new(db_state, query);
 
       free(serial_buf);
@@ -1051,14 +1137,20 @@ static int task_database_iterate_serial_lookup(
 
       if (db_info_entry && db_info_entry->serial)
       {
-#if 0
-         RARCH_LOG("serial: %s , entry serial: %s (%s).\n",
-                   db_state->serial, db_info_entry->serial,
-                   db_info_entry->name);
-#endif
          if (string_is_equal(db_state->serial, db_info_entry->serial))
-            return database_info_list_iterate_found_match(_db,
-                  db_state, db, NULL);
+         {
+            if (task_database_check_serial_and_crc(db_state))
+            {
+               if (db_state->crc == 0)
+                  intfstream_file_get_crc(name, 0, SIZE_MAX, &db_state->crc);
+               if (db_state->crc == db_info_entry->crc32)
+                  return database_info_list_iterate_found_match(_db,
+                        db_state, db, NULL);
+            }
+            else
+               return database_info_list_iterate_found_match(_db,
+                     db_state, db, NULL);
+         }
       }
    }
 
@@ -1179,6 +1271,10 @@ static void task_database_handler(retro_task_t *task)
                      db->flags & DB_HANDLE_FLAG_SHOW_HIDDEN_FILES,
                      false, false);
 
+            RARCH_LOG("[Scanner]: %s\"%s\"..\n", msg_hash_to_str(MSG_MANUAL_CONTENT_SCAN_START), db->fullpath);
+            if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+               printf("%s\"%s\"..\n", msg_hash_to_str(MSG_MANUAL_CONTENT_SCAN_START), db->fullpath);
+
             /* If the scan path matches a database path exactly then
              * save time by only processing that database. */
             if (dbstate->list && (db->flags & DB_HANDLE_FLAG_IS_DIRECTORY))
@@ -1269,6 +1365,9 @@ static void task_database_handler(retro_task_t *task)
             task_set_title(task, strdup(msg));
             task_set_progress(task, 100);
             ui_companion_driver_notify_refresh();
+            RARCH_LOG("[Scanner]: %s\n", msg);
+            if (retroarch_override_setting_is_set(RARCH_OVERRIDE_SETTING_DATABASE_SCAN, NULL))
+               printf("%s\n", msg);
 #else
             fprintf(stderr, "msg: %s\n", msg);
 #endif
@@ -1282,6 +1381,7 @@ static void task_database_handler(retro_task_t *task)
    }
 
    return;
+
 task_finished:
    if (task)
       task_set_finished(task, true);

@@ -20,7 +20,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -63,7 +62,7 @@ static int file_archive_get_file_list_cb(
       /* Skip if directory. */
       if (last_char == '/' || last_char == '\\' )
          return 1;
-      
+
       string_list_initialize(&ext_list);
       if (string_split_noalloc(&ext_list, valid_exts, "|"))
       {
@@ -177,43 +176,6 @@ static int file_archive_parse_file_init(file_archive_transfer_t *state,
    state->step_total   = 0;
 
    return state->backend->archive_parse_file_init(state, path);
-}
-
-/**
- * file_archive_decompress_data_to_file:
- * @path                        : filename path of archive.
- * @size                        : output file size
- * @checksum                    : CRC32 checksum from input data.
- *
- * Write data to file.
- *
- * Returns: true (1) on success, otherwise false (0).
- **/
-static int file_archive_decompress_data_to_file(
-      file_archive_transfer_t *transfer,
-      file_archive_file_handle_t *handle,
-      const char *path,
-      uint32_t size,
-      uint32_t checksum)
-{
-   if (!handle)
-      return 0;
-
-#if 0
-   handle->real_checksum = transfer->backend->stream_crc_calculate(
-         0, handle->data, size);
-   if (handle->real_checksum != checksum)
-   {
-      /* File CRC difers from archive CRC. */
-      printf("File CRC differs from archive CRC. File: 0x%x, Archive: 0x%x.\n",
-            (unsigned)handle->real_checksum, (unsigned)checksum);
-   }
-#endif
-
-   if (!filestream_write_file(path, handle->data, size))
-      return 0;
-
-   return 1;
 }
 
 void file_archive_parse_file_iterate_stop(file_archive_transfer_t *state)
@@ -512,9 +474,7 @@ bool file_archive_perform_mode(const char *path, const char *valid_exts,
                userdata->transfer->context, &handle);
    }while (ret == 0);
 
-   if (ret == -1 || !file_archive_decompress_data_to_file(
-            userdata->transfer, &handle, path,
-            size, crc32))
+   if (ret == -1 || !filestream_write_file(path, handle.data, size))
       return false;
 
    return true;
@@ -570,7 +530,7 @@ int file_archive_compressed_read(
       const char * path, void **buf,
       const char* optional_filename, int64_t *length)
 {
-   const struct 
+   const struct
       file_archive_file_backend *backend = NULL;
    struct string_list *str_list          = NULL;
 

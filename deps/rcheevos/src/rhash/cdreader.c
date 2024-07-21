@@ -1,6 +1,6 @@
 #include "rc_hash.h"
 
-#include "../rcheevos/rc_compat.h"
+#include "../rc_compat.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -31,7 +31,7 @@ struct cdrom_t
 #endif
 };
 
-static int cdreader_get_sector(unsigned char header[16])
+static int cdreader_get_sector(uint8_t header[16])
 {
   int minutes = (header[12] >> 4) * 10 + (header[12] & 0x0F);
   int seconds = (header[13] >> 4) * 10 + (header[13] & 0x0F);
@@ -50,11 +50,11 @@ static void cdreader_determine_sector_size(struct cdrom_t* cdrom)
    * Then check for the presence of "CD001", which is gauranteed to be in either the
    * boot record or primary volume descriptor, one of which is always at sector 16.
    */
-  const unsigned char sync_pattern[] = {
+  const uint8_t sync_pattern[] = {
     0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00
   };
 
-  unsigned char header[32];
+  uint8_t header[32];
   const int64_t toc_sector = 16 + cdrom->track_pregap_sectors;
 
   cdrom->sector_size = 0;
@@ -124,6 +124,8 @@ static void* cdreader_open_bin_track(const char* path, uint32_t track)
     return NULL;
 
   cdrom = (struct cdrom_t*)calloc(1, sizeof(*cdrom));
+  if (!cdrom)
+    return NULL;
   cdrom->file_handle = file_handle;
 #ifndef NDEBUG
   cdrom->track_id = track;
@@ -343,7 +345,7 @@ static void* cdreader_open_cue_track(const char* path, uint32_t track)
           ++ptr;
 
         /* convert mm:ss:ff to sector count */
-        sscanf(ptr, "%d:%d:%d", &m, &s, &f);
+        sscanf_s(ptr, "%d:%d:%d", &m, &s, &f);
         sector_offset = ((m * 60) + s) * 75 + f;
 
         if (current_track.first_sector == -1)
@@ -719,8 +721,8 @@ static void* cdreader_open_gdi_track(const char* path, uint32_t track)
           largest_track_size = track_size;
           largest_track = current_track;
           largest_track_lba = lba;
-          strcpy(largest_track_file, file);
-          strcpy(largest_track_sector_size, sector_size);
+          strcpy_s(largest_track_file, sizeof(largest_track_file), file);
+          strcpy_s(largest_track_sector_size, sizeof(largest_track_sector_size), sector_size);
         }
       }
     }
@@ -748,8 +750,8 @@ static void* cdreader_open_gdi_track(const char* path, uint32_t track)
   if (largest_track != 0 && largest_track != current_track)
   {
     current_track = largest_track;
-    strcpy(file, largest_track_file);
-    strcpy(sector_size, largest_track_sector_size);
+    strcpy_s(file, sizeof(file), largest_track_file);
+    strcpy_s(sector_size, sizeof(sector_size), largest_track_sector_size);
     lba = largest_track_lba;
   }
 
@@ -869,7 +871,7 @@ void rc_hash_get_default_cdreader(struct rc_hash_cdreader* cdreader)
   cdreader->first_track_sector = cdreader_first_track_sector;
 }
 
-void rc_hash_init_default_cdreader()
+void rc_hash_init_default_cdreader(void)
 {
   struct rc_hash_cdreader cdreader;
   rc_hash_get_default_cdreader(&cdreader);

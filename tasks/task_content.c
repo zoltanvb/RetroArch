@@ -60,7 +60,6 @@
 #include <array/rbuf.h>
 
 #include <retro_miscellaneous.h>
-#include <retro_assert.h>
 
 #ifdef HAVE_MENU
 #include "../menu/menu_driver.h"
@@ -124,7 +123,8 @@ enum content_information_flags
    CONTENT_INFO_FLAG_IS_UPS_PREF                 = (1 << 5),
    CONTENT_INFO_FLAG_PATCH_IS_BLOCKED            = (1 << 6),
    CONTENT_INFO_FLAG_BIOS_IS_MISSING             = (1 << 7),
-   CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING     = (1 << 8)
+   CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING     = (1 << 8),
+   CONTENT_INFO_FLAG_IS_XDELTA_PREF              = (1 << 9)
 };
 
 struct content_information_ctx
@@ -132,6 +132,7 @@ struct content_information_ctx
    char *name_ips;
    char *name_bps;
    char *name_ups;
+   char *name_xdelta;
 
    char *valid_extensions;
    char *directory_cache;
@@ -210,8 +211,8 @@ static bool content_file_override_get_ext(
 bool content_file_override_set(
       const struct retro_system_content_info_override *overrides)
 {
-   content_state_t *p_content = content_state_get_ptr();
    size_t i;
+   content_state_t *p_content = content_state_get_ptr();
 
    if (!p_content || !overrides)
       return false;
@@ -221,28 +222,21 @@ bool content_file_override_set(
 
    for (i = 0; overrides[i].extensions; i++)
    {
-      struct string_list ext_list = {0};
-      size_t j;
+      char *tok, *save;
+      char *overrides_ext_cpy = strdup(overrides[i].extensions);
 
-      /* Get list of extensions affected by override */
-      string_list_initialize(&ext_list);
-      if (!string_split_noalloc(&ext_list,
-            overrides[i].extensions, "|"))
+      /* Get list of extensions affected by overrides */
+      for (tok = strtok_r(overrides_ext_cpy, "|", &save); tok;
+            tok = strtok_r(NULL, "|", &save))
       {
-         string_list_deinitialize(&ext_list);
-         continue;
-      }
-
-      for (j = 0; j < ext_list.size; j++)
-      {
-         const char *ext                   = ext_list.elems[j].data;
-         content_file_override_t *override = NULL;
          size_t num_entries;
+         const char *ext                   = tok;
+         content_file_override_t *override = NULL;
 
          /* Check whether extension has already been
           * registered */
-         if (string_is_empty(ext) ||
-             content_file_override_get_ext(p_content, ext, NULL))
+         if (   string_is_empty(ext)
+             || content_file_override_get_ext(p_content, ext, NULL))
             continue;
 
          /* Add current override to the list */
@@ -251,14 +245,14 @@ bool content_file_override_set(
          if (!RBUF_TRYFIT(p_content->content_override_list,
                num_entries + 1))
          {
-            string_list_deinitialize(&ext_list);
+            free(overrides_ext_cpy);
             return false;
          }
 
          RBUF_RESIZE(p_content->content_override_list,
                num_entries + 1);
 
-         RARCH_LOG("[Content Override]: File Extension: '%s' - need_fullpath: %s, persistent_data: %s\n",
+         RARCH_LOG("[Content Override]: File Extension: '%3s' - need_fullpath: %s, persistent_data: %s\n",
                ext, overrides[i].need_fullpath ? "TRUE" : "FALSE",
                overrides[i].persistent_data ? "TRUE" : "FALSE");
 
@@ -268,7 +262,7 @@ bool content_file_override_set(
          override->persistent_data = overrides[i].persistent_data;
       }
 
-      string_list_deinitialize(&ext_list);
+      free(overrides_ext_cpy);
    }
 
    return true;
@@ -438,7 +432,7 @@ static content_file_list_t *content_file_list_init(size_t size)
                      calloc(size, sizeof(struct retro_game_info))))
             {
                /* Create retro_game_info_ext object */
-               if ((file_list->game_info_ext = 
+               if ((file_list->game_info_ext =
                         (struct retro_game_info_ext *)
                         calloc(size, sizeof(struct retro_game_info_ext))))
                   return file_list;
@@ -727,9 +721,11 @@ static bool content_file_load_into_memory(
                   content_ctx->flags & CONTENT_INFO_FLAG_IS_IPS_PREF,
                   content_ctx->flags & CONTENT_INFO_FLAG_IS_BPS_PREF,
                   content_ctx->flags & CONTENT_INFO_FLAG_IS_UPS_PREF,
+                  content_ctx->flags & CONTENT_INFO_FLAG_IS_XDELTA_PREF,
                   content_ctx->name_ips,
                   content_ctx->name_bps,
                   content_ctx->name_ups,
+                  content_ctx->name_xdelta,
                   (uint8_t**)&content_data,
                   (void*)&content_size);
 #endif
@@ -782,6 +778,7 @@ static bool content_file_extract_from_archive(
    tmp_path[0]  = '\0';
    msg[0]       = '\0';
 
+   /* TODO/FIXME - localize */
    RARCH_LOG("[Content]: Core requires uncompressed content - "
          "extracting archive to temporary directory.\n");
 
@@ -809,6 +806,7 @@ static bool content_file_extract_from_archive(
    /* Update content path pointer */
    *content_path = tmp_path_ptr;
 
+   /* TODO/FIXME - localize */
    RARCH_LOG("[Content]: Content successfully extracted to: \"%s\".\n",
          tmp_path);
 
@@ -873,7 +871,8 @@ static void content_file_get_path(
                   content_path, sizeof(info_path));
             info_path[_len  ] = '#';
             info_path[_len+1] = '\0';
-            strlcat(info_path, archive_file, sizeof(info_path));
+            _len             += 1;
+            strlcpy(info_path + _len, archive_file, sizeof(info_path) - _len);
 
             /* Update 'content' string_list */
             string_list_set(content, (unsigned)idx, info_path);
@@ -945,7 +944,7 @@ static bool content_file_load(
    retro_ctx_load_content_info_t load_info;
    bool used_vfs_fallback_copy                = false;
 #ifdef __WINRT__
-   rarch_system_info_t *system                = &runloop_state_get_ptr()->system;
+   rarch_system_info_t *sys_info              = &runloop_state_get_ptr()->system;
 #endif
    enum rarch_content_type first_content_type = RARCH_CONTENT_NONE;
 
@@ -1017,14 +1016,14 @@ static bool content_file_load(
 #ifdef __WINRT__
             /* TODO: When support for the 'actual' VFS is added,
              * there will need to be some more logic here */
-            if (!system->supports_vfs &&
-                !is_path_accessible_using_standard_io(content_path))
+            if (   !sys_info->supports_vfs
+                && !is_path_accessible_using_standard_io(content_path))
             {
                /* Try to copy ACL to file first. If successful, this should mean that cores using standard I/O can still access them
                *  It would be better to set the ACL to allow full access for all application packages. However,
                *  this is substantially easier than writing out new functions to do this
                *  Copy ACL from localstate
-               *  I am genuinely really proud of these work arounds 
+               *  I am genuinely really proud of these work arounds
                */
                wchar_t wcontent_path[MAX_PATH];
                mbstowcs(wcontent_path, content_path, MAX_PATH);
@@ -1045,18 +1044,21 @@ static bool content_file_load(
                   else
                      new_basedir[0] = '\0';
 
-                  if (string_is_empty(new_basedir) ||
-                     !path_is_directory(new_basedir) ||
-                     !is_path_accessible_using_standard_io(new_basedir))
+                  if (   string_is_empty  (new_basedir)
+                     || !path_is_directory(new_basedir)
+                     || !is_path_accessible_using_standard_io(new_basedir))
                   {
+                     size_t _len;
                      DWORD basedir_attribs;
                      RARCH_WARN("[Content]: Tried copying to cache directory, "
                         "but cache directory was not set or found. "
                         "Setting cache directory to root of writable app directory...\n");
-                     strlcpy(new_basedir, uwp_dir_data, sizeof(new_basedir));
-                     strlcat(new_basedir, "VFSCACHE\\", sizeof(new_basedir));
+                     _len = strlcpy(new_basedir, uwp_dir_data, sizeof(new_basedir));
+                     strlcpy(new_basedir + _len,
+                           "VFSCACHE\\",
+                           sizeof(new_basedir) - _len);
                      basedir_attribs = GetFileAttributes(new_basedir);
-                     if (       (basedir_attribs == INVALID_FILE_ATTRIBUTES) 
+                     if (       (basedir_attribs == INVALID_FILE_ATTRIBUTES)
                            || (!(basedir_attribs & FILE_ATTRIBUTE_DIRECTORY)))
                      {
                         if (!CreateDirectoryA(new_basedir, NULL))
@@ -1072,7 +1074,7 @@ static bool content_file_load(
                    * (This disclaimer is out dated but I don't want to remove it)*/
                   if (!CopyFileFromAppW(wcontent_path, wnew_path, false))
                   {
-                     int err = GetLastError();
+                     /* TODO/FIXME - localize */
                      snprintf(msg, sizeof(msg), "%s \"%s\". (during copy read or write)\n",
                         msg_hash_to_str(MSG_COULD_NOT_READ_CONTENT_FILE),
                         content_path);
@@ -1176,6 +1178,7 @@ static const struct retro_subsystem_info *content_file_init_subsystem(
 
    if (!special)
    {
+      /* TODO/FIXME - localize */
       snprintf(msg, sizeof(msg),
             "Failed to find subsystem \"%s\" in libretro implementation.\n",
             path_get(RARCH_PATH_SUBSYSTEM));
@@ -1193,6 +1196,7 @@ static const struct retro_subsystem_info *content_file_init_subsystem(
 
       if (special->num_roms != subsystem->size)
       {
+         /* TODO/FIXME - localize */
          snprintf(msg, sizeof(msg),
                "Libretro core requires %u content files for "
                "subsystem \"%s\", but %u content files were provided.\n",
@@ -1204,6 +1208,7 @@ static const struct retro_subsystem_info *content_file_init_subsystem(
    }
    else if (subsystem && subsystem->size)
    {
+      /* TODO/FIXME - localize */
       snprintf(msg, sizeof(msg),
             "Libretro core takes no content for subsystem \"%s\", "
             "but %u content files were provided.\n",
@@ -1271,7 +1276,7 @@ CONTENT_INFO_FLAG_NEED_FULLPATH);
       if (string_is_empty(content_path))
       {
          if (  (flags & CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT)
-             && content_ctx->flags 
+             && content_ctx->flags
              & CONTENT_INFO_FLAG_SET_SUPPORTS_NO_GAME_ENABLE)
             string_list_append(content, "", attr);
       }
@@ -1418,8 +1423,6 @@ static bool content_load(content_ctx_info_t *info,
       malloc(sizeof(*wrap_args))))
       return false;
 
-   retro_assert(wrap_args);
-
    wrap_args->argv           = NULL;
    wrap_args->content_path   = NULL;
    wrap_args->sram_path      = NULL;
@@ -1485,7 +1488,7 @@ static bool content_load(content_ctx_info_t *info,
 #endif
 
    command_event(CMD_EVENT_HISTORY_INIT, NULL);
-   rarch_favorites_init();
+   retroarch_favorites_init();
    command_event(CMD_EVENT_RESUME, NULL);
    command_event(CMD_EVENT_VIDEO_SET_ASPECT_RATIO, NULL);
 
@@ -1500,7 +1503,7 @@ void menu_content_environment_get(int *argc, char *argv[],
 {
    struct rarch_main_wrap *wrap_args = (struct rarch_main_wrap*)params_data;
    runloop_state_t       *runloop_st = runloop_state_get_ptr();
-   rarch_system_info_t *sys_info     = &runloop_st->system;
+   rarch_system_info_t   *sys_info   = &runloop_st->system;
 
    if (!wrap_args)
       return;
@@ -1531,7 +1534,7 @@ void menu_content_environment_get(int *argc, char *argv[],
       wrap_args->content_path  = path_get(RARCH_PATH_CONTENT);
    if (!retroarch_override_setting_is_set(
             RARCH_OVERRIDE_SETTING_LIBRETRO, NULL))
-      wrap_args->libretro_path = string_is_empty(path_get(RARCH_PATH_CORE)) 
+      wrap_args->libretro_path = string_is_empty(path_get(RARCH_PATH_CORE))
          ? NULL
          : path_get(RARCH_PATH_CORE);
 }
@@ -1551,12 +1554,12 @@ static void task_push_to_history_list(
    uint8_t flags               = content_get_flags();
 
    /* Push entry to top of history playlist */
-   if (     (flags & CONTENT_ST_FLAG_IS_INITED) 
+   if (     (flags & CONTENT_ST_FLAG_IS_INITED)
          || (flags & CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT))
    {
       char tmp[PATH_MAX_LENGTH];
-      const char *path_content       = path_get(RARCH_PATH_CONTENT);
-      struct retro_system_info *info = &runloop_st->system.info;
+      const char *path_content          = path_get(RARCH_PATH_CONTENT);
+      struct retro_system_info *sysinfo = &runloop_st->system.info;
 
       if (!string_is_empty(path_content))
       {
@@ -1575,7 +1578,7 @@ static void task_push_to_history_list(
          menu_driver_ctl(RARCH_MENU_CTL_SET_PENDING_QUICK_MENU, NULL);
 #endif
 
-      if (info && !string_is_empty(tmp))
+      if (sysinfo && !string_is_empty(tmp))
       {
          const char *core_path      = NULL;
          const char *core_name      = NULL;
@@ -1621,7 +1624,7 @@ static void task_push_to_history_list(
                   core_name         = core_info->display_name;
 
                if (string_is_empty(core_name))
-                  core_name         = info->library_name;
+                  core_name         = sysinfo->library_name;
 
                if (launched_from_companion_ui)
                {
@@ -1658,7 +1661,7 @@ static void task_push_to_history_list(
             label = runloop_st->name.label;
 
          if (
-              settings && settings->bools.history_list_enable 
+              settings && settings->bools.history_list_enable
                && playlist_hist)
          {
             char subsystem_name[PATH_MAX_LENGTH];
@@ -1667,7 +1670,7 @@ static void task_push_to_history_list(
             subsystem_name[0] = '\0';
 
             content_get_subsystem_friendly_name(path_get(RARCH_PATH_SUBSYSTEM), subsystem_name, sizeof(subsystem_name));
-            /* The push function reads our entry as const, 
+            /* The push function reads our entry as const,
              * so these casts are safe */
             entry.path            = (char*)tmp;
             entry.label           = (char*)label;
@@ -1681,6 +1684,9 @@ static void task_push_to_history_list(
             entry.entry_slot      = runloop_st->entry_state_slot;
 
             command_playlist_push_write(playlist_hist, &entry);
+#if TARGET_OS_TV
+            update_topshelf();
+#endif
          }
       }
    }
@@ -1857,9 +1863,10 @@ static bool firmware_update_status(
 {
    char s[PATH_MAX_LENGTH];
    core_info_ctx_firmware_t firmware_info;
-   bool set_missing_firmware  = false;
-   core_info_t *core_info     = NULL;
-   
+   bool set_missing_firmware         = false;
+   core_info_t *core_info            = NULL;
+   runloop_state_t       *runloop_st = runloop_state_get_ptr();
+
    core_info_get_current_core(&core_info);
 
    if (!core_info)
@@ -1881,13 +1888,13 @@ static bool firmware_update_status(
          core_info->path,
          firmware_info.directory.system);
 
-   retroarch_ctl(RARCH_CTL_UNSET_MISSING_BIOS, NULL);
-
    core_info_list_update_missing_firmware(&firmware_info,
          &set_missing_firmware);
 
    if (set_missing_firmware)
-      retroarch_ctl(RARCH_CTL_SET_MISSING_BIOS, NULL);
+      runloop_st->missing_bios    = true;
+   else
+      runloop_st->missing_bios    = false;
 
    if (
             (content_ctx->flags & CONTENT_INFO_FLAG_BIOS_IS_MISSING)
@@ -1916,7 +1923,9 @@ bool task_push_start_dummy_core(content_ctx_info_t *content_info)
    rarch_system_info_t *sys_info              = &runloop_st->system;
    const char *path_dir_system                = settings->paths.directory_system;
    bool check_firmware_before_loading         = settings->bools.check_firmware_before_loading;
+#ifdef HAVE_PATCH
    uint16_t rarch_flags                       = retroarch_get_flags();
+#endif
 
    if (!content_info)
       return false;
@@ -1932,16 +1941,21 @@ bool task_push_start_dummy_core(content_ctx_info_t *content_info)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
    if (rarch_flags & RARCH_FLAGS_UPS_PREF)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+   if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+      content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
+#endif /* HAVE_XDELTA */
    if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
       content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
 #endif
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
+   if (runloop_st->missing_bios)
       content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -1953,6 +1967,8 @@ bool task_push_start_dummy_core(content_ctx_info_t *content_info)
       content_ctx.name_bps                 = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                 = strdup(runloop_st->name.ups);
+   if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta              = strdup(runloop_st->name.xdelta);
 
    if (!string_is_empty(path_dir_system))
       content_ctx.directory_system            = strdup(path_dir_system);
@@ -1980,6 +1996,8 @@ bool task_push_start_dummy_core(content_ctx_info_t *content_info)
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
 
@@ -2007,7 +2025,9 @@ bool task_push_load_content_from_playlist_from_menu(
    bool force_core_reload                     = settings->bools.always_reload_core_on_run_content;
 #endif
    bool check_firmware_before_loading         = settings->bools.check_firmware_before_loading;
+#ifdef HAVE_PATCH
    uint16_t rarch_flags                       = retroarch_get_flags();
+#endif
 
    content_ctx.flags     = 0;
 
@@ -2020,16 +2040,21 @@ bool task_push_load_content_from_playlist_from_menu(
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
    if (rarch_flags & RARCH_FLAGS_UPS_PREF)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+   if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+      content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
+#endif /* HAVE_XDELTA */
    if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
       content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
 #endif
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
+   if (runloop_st->missing_bios)
       content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -2041,6 +2066,8 @@ bool task_push_load_content_from_playlist_from_menu(
       content_ctx.name_bps                    = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                    = strdup(runloop_st->name.ups);
+   if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta                 = strdup(runloop_st->name.xdelta);
    if (label)
       strlcpy(runloop_st->name.label, label, sizeof(runloop_st->name.label));
    else
@@ -2127,6 +2154,8 @@ end:
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
 
@@ -2136,7 +2165,6 @@ end:
 
 bool task_push_start_current_core(content_ctx_info_t *content_info)
 {
-   uint16_t rarch_flags;
    content_information_ctx_t content_ctx;
    bool ret                           = true;
    content_state_t *p_content         = content_state_get_ptr();
@@ -2148,28 +2176,35 @@ bool task_push_start_current_core(content_ctx_info_t *content_info)
    if (!content_info)
       return false;
 
-   rarch_flags                        = retroarch_get_flags();
    content_ctx.flags                  = 0;
 
    if (check_firmware_before_loading)
       content_ctx.flags |= CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING;
 #ifdef HAVE_PATCH
-   if (rarch_flags & RARCH_FLAGS_IPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_IPS_PREF;
-   if (rarch_flags & RARCH_FLAGS_BPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
-   if (rarch_flags & RARCH_FLAGS_UPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
-   if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
-      content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
+   {
+      uint16_t rarch_flags = retroarch_get_flags();
+      if (rarch_flags & RARCH_FLAGS_IPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_IPS_PREF;
+      if (rarch_flags & RARCH_FLAGS_BPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
+      if (rarch_flags & RARCH_FLAGS_UPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+      if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
 #endif
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
+      if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
+         content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
+   }
+#endif
+   if (runloop_st->missing_bios)
       content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -2181,6 +2216,8 @@ bool task_push_start_current_core(content_ctx_info_t *content_info)
       content_ctx.name_bps                 = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                 = strdup(runloop_st->name.ups);
+   if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta              = strdup(runloop_st->name.xdelta);
 
    if (!string_is_empty(path_dir_system))
       content_ctx.directory_system            = strdup(path_dir_system);
@@ -2228,6 +2265,8 @@ end:
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
 
@@ -2270,9 +2309,7 @@ bool task_push_load_contentless_core_from_menu(
    content_information_ctx_t content_ctx = {0};
    content_state_t *p_content            = content_state_get_ptr();
    bool ret                              = true;
-#if defined(HAVE_DYNAMIC)
    runloop_state_t *runloop_st           = runloop_state_get_ptr();
-#endif
    settings_t *settings                  = config_get_ptr();
    const char *path_dir_system           = settings->paths.directory_system;
    bool check_firmware_before_loading    = settings->bools.check_firmware_before_loading;
@@ -2282,12 +2319,12 @@ bool task_push_load_contentless_core_from_menu(
    if (string_is_empty(core_path))
       return false;
 
-   content_ctx.flags     = 0;
+   content_ctx.flags                         = 0;
 
    if (check_firmware_before_loading)
-      content_ctx.flags |= CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING;
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
-      content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
+      content_ctx.flags                     |= CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING;
+   if (runloop_st->missing_bios)
+      content_ctx.flags                     |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    if (!string_is_empty(path_dir_system))
       content_ctx.directory_system           = strdup(path_dir_system);
 
@@ -2361,7 +2398,6 @@ bool task_push_load_content_with_new_core_from_menu(
       retro_task_callback_t cb,
       void *user_data)
 {
-   uint16_t rarch_flags;
    content_information_ctx_t content_ctx;
    content_state_t                 *p_content = content_state_get_ptr();
    bool ret                                   = true;
@@ -2383,28 +2419,35 @@ bool task_push_load_content_with_new_core_from_menu(
             type, cb, user_data);
 #endif
 
-   rarch_flags                        = retroarch_get_flags();
    content_ctx.flags                  = 0;
 
    if (check_firmware_before_loading)
       content_ctx.flags |= CONTENT_INFO_FLAG_CHECK_FW_BEFORE_LOADING;
 #ifdef HAVE_PATCH
-   if (rarch_flags & RARCH_FLAGS_IPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_IPS_PREF;
-   if (rarch_flags & RARCH_FLAGS_BPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
-   if (rarch_flags & RARCH_FLAGS_UPS_PREF)
-      content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
-   if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
-      content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
+   {
+      uint16_t rarch_flags = retroarch_get_flags();
+      if (rarch_flags & RARCH_FLAGS_IPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_IPS_PREF;
+      if (rarch_flags & RARCH_FLAGS_BPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
+      if (rarch_flags & RARCH_FLAGS_UPS_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+      if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+         content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
 #endif
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
-      content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
+      if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
+         content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
+   }
+#endif
+   if (runloop_st->missing_bios)
+      content_ctx.flags                      |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -2416,6 +2459,8 @@ bool task_push_load_content_with_new_core_from_menu(
       content_ctx.name_bps                 = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                 = strdup(runloop_st->name.ups);
+   if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta              = strdup(runloop_st->name.xdelta);
 
    runloop_st->name.label[0]                   = '\0';
 
@@ -2464,6 +2509,8 @@ end:
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
 
@@ -2488,8 +2535,9 @@ static bool task_load_content_internal(
    bool set_supports_no_game_enable           = settings->bools.set_supports_no_game_enable;
    const char *path_dir_system                = settings->paths.directory_system;
    const char *path_dir_cache                 = settings->paths.directory_cache;
-
+#ifdef HAVE_PATCH
    uint16_t rarch_flags                       = retroarch_get_flags();
+#endif
    content_ctx.flags                          = 0;
 
    if (check_firmware_before_loading)
@@ -2501,16 +2549,21 @@ static bool task_load_content_internal(
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
    if (rarch_flags & RARCH_FLAGS_UPS_PREF)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+   if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+      content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
+#endif /* HAVE_XDELTA */
    if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
       content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
 #endif
-   if (retroarch_ctl(RARCH_CTL_IS_MISSING_BIOS, NULL))
-      content_ctx.flags |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
+   if (runloop_st->missing_bios)
+      content_ctx.flags                      |= CONTENT_INFO_FLAG_BIOS_IS_MISSING;
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -2518,19 +2571,19 @@ static bool task_load_content_internal(
 
    if (sys_info)
    {
-      struct retro_system_info *system        = &runloop_st->system.info;
+      struct retro_system_info *sysinfo       = &runloop_st->system.info;
 
       if (set_supports_no_game_enable)
          content_ctx.flags |= CONTENT_INFO_FLAG_SET_SUPPORTS_NO_GAME_ENABLE;
 
       if (!string_is_empty(path_dir_cache))
          content_ctx.directory_cache          = strdup(path_dir_cache);
-      if (!string_is_empty(system->valid_extensions))
-         content_ctx.valid_extensions         = strdup(system->valid_extensions);
+      if (!string_is_empty(sysinfo->valid_extensions))
+         content_ctx.valid_extensions         = strdup(sysinfo->valid_extensions);
 
-      if (system->block_extract)
+      if (sysinfo->block_extract)
          content_ctx.flags |= CONTENT_INFO_FLAG_BLOCK_EXTRACT;
-      if (system->need_fullpath)
+      if (sysinfo->need_fullpath)
          content_ctx.flags |= CONTENT_INFO_FLAG_NEED_FULLPATH;
 
       content_ctx.subsystem.data              = sys_info->subsystem.data;
@@ -2543,6 +2596,8 @@ static bool task_load_content_internal(
       content_ctx.name_bps                 = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                 = strdup(runloop_st->name.ups);
+   if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta              = strdup(runloop_st->name.xdelta);
 
    if (!string_is_empty(path_dir_system))
       content_ctx.directory_system            = strdup(path_dir_system);
@@ -2575,6 +2630,8 @@ end:
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
    if (content_ctx.directory_cache)
@@ -2756,18 +2813,18 @@ void content_set_subsystem(unsigned idx)
    const struct retro_subsystem_info *subsystem = NULL;
    runloop_state_t                  *runloop_st = runloop_state_get_ptr();
    content_state_t  *p_content                  = content_state_get_ptr();
-   rarch_system_info_t                  *system = &runloop_st->system;
+   rarch_system_info_t                *sys_info = &runloop_st->system;
 
    /* Core fully loaded, use the subsystem data */
-   if (system->subsystem.data)
-      subsystem                                 = system->subsystem.data + idx;
+   if (sys_info->subsystem.data)
+      subsystem                                 = sys_info->subsystem.data + idx;
    /* Core not loaded completely, use the data we peeked on load core */
    else
       subsystem                                 = runloop_st->subsystem_data + idx;
 
    p_content->pending_subsystem_id              = idx;
 
-   if (      subsystem 
+   if (      subsystem
          && (runloop_st->subsystem_current_count > 0))
    {
       strlcpy(p_content->pending_subsystem_ident,
@@ -2786,15 +2843,15 @@ void content_set_subsystem(unsigned idx)
 bool content_set_subsystem_by_name(const char* subsystem_name)
 {
    runloop_state_t         *runloop_st = runloop_state_get_ptr();
-   rarch_system_info_t         *system = &runloop_st->system;
+   rarch_system_info_t       *sys_info = &runloop_st->system;
    unsigned i                          = 0;
    /* Core not loaded completely, use the data we peeked on load core */
-   const struct retro_subsystem_info 
+   const struct retro_subsystem_info
       *subsystem                       = runloop_st->subsystem_data;
 
    /* Core fully loaded, use the subsystem data */
-   if (system->subsystem.data)
-      subsystem                        = system->subsystem.data;
+   if (sys_info->subsystem.data)
+      subsystem                        = sys_info->subsystem.data;
 
    for (i = 0; i < runloop_st->subsystem_current_count; i++, subsystem++)
    {
@@ -2812,13 +2869,13 @@ void content_get_subsystem_friendly_name(const char* subsystem_name, char* subsy
 {
    unsigned i                                   = 0;
    runloop_state_t *runloop_st                  = runloop_state_get_ptr();
-   rarch_system_info_t                  *system = &runloop_st->system;
+   rarch_system_info_t                *sys_info = &runloop_st->system;
    /* Core not loaded completely, use the data we peeked on load core */
    const struct retro_subsystem_info *subsystem = runloop_st->subsystem_data;
 
    /* Core fully loaded, use the subsystem data */
-   if (system->subsystem.data)
-      subsystem = system->subsystem.data;
+   if (sys_info->subsystem.data)
+      subsystem = sys_info->subsystem.data;
 
    for (i = 0; i < runloop_st->subsystem_current_count; i++, subsystem++)
    {
@@ -2899,7 +2956,7 @@ static uint32_t file_crc32(uint32_t crc, const char *path)
    for (i = 0; i < CRC32_MAX_MB; i++)
    {
       int64_t nread = filestream_read(file, buf, CRC32_BUFFER_SIZE);
-      if (nread < 0)		
+      if (nread < 0)
       {
          free(buf);
          filestream_close(file);
@@ -2966,7 +3023,7 @@ void content_set_subsystem_info(void)
       return;
 
    path_set(RARCH_PATH_SUBSYSTEM, p_content->pending_subsystem_ident);
-   path_set_special(p_content->pending_subsystem_roms,
+   runloop_path_set_special(p_content->pending_subsystem_roms,
          p_content->pending_subsystem_rom_num);
 }
 
@@ -2988,7 +3045,9 @@ bool content_init(void)
    bool set_supports_no_game_enable   = settings->bools.set_supports_no_game_enable;
    const char *path_dir_system        = settings->paths.directory_system;
    const char *path_dir_cache         = settings->paths.directory_cache;
+#ifdef HAVE_PATCH
    uint16_t rarch_flags               = retroarch_get_flags();
+#endif
 
    content_file_list_free(p_content->content_list);
    p_content->content_list            = NULL;
@@ -3004,14 +3063,19 @@ bool content_init(void)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_BPS_PREF;
    if (rarch_flags & RARCH_FLAGS_UPS_PREF)
       content_ctx.flags |= CONTENT_INFO_FLAG_IS_UPS_PREF;
+#ifdef HAVE_XDELTA
+   if (rarch_flags & RARCH_FLAGS_XDELTA_PREF)
+      content_ctx.flags |= CONTENT_INFO_FLAG_IS_XDELTA_PREF;
+#endif /* HAVE_XDELTA */
    if (runloop_st->flags & RUNLOOP_FLAG_PATCH_BLOCKED)
       content_ctx.flags |= CONTENT_INFO_FLAG_PATCH_IS_BLOCKED;
-#endif
+#endif /* HAVE_PATCH */
    content_ctx.directory_system               = NULL;
    content_ctx.directory_cache                = NULL;
    content_ctx.name_ips                       = NULL;
    content_ctx.name_bps                       = NULL;
    content_ctx.name_ups                       = NULL;
+   content_ctx.name_xdelta                    = NULL;
    content_ctx.valid_extensions               = NULL;
 
    content_ctx.subsystem.data                 = NULL;
@@ -3023,10 +3087,12 @@ bool content_init(void)
       content_ctx.name_bps                 = strdup(runloop_st->name.bps);
    if (!string_is_empty(runloop_st->name.ups))
       content_ctx.name_ups                 = strdup(runloop_st->name.ups);
+    if (!string_is_empty(runloop_st->name.xdelta))
+      content_ctx.name_xdelta              = strdup(runloop_st->name.xdelta);
 
    if (sys_info)
    {
-      struct retro_system_info *system = &runloop_st->system.info;
+      struct retro_system_info *sysinfo = &runloop_st->system.info;
 
       if (set_supports_no_game_enable)
          content_ctx.flags            |= CONTENT_INFO_FLAG_SET_SUPPORTS_NO_GAME_ENABLE;
@@ -3035,12 +3101,12 @@ bool content_init(void)
          content_ctx.directory_system  = strdup(path_dir_system);
       if (!string_is_empty(path_dir_cache))
          content_ctx.directory_cache   = strdup(path_dir_cache);
-      if (!string_is_empty(system->valid_extensions))
-         content_ctx.valid_extensions  = strdup(system->valid_extensions);
+      if (!string_is_empty(sysinfo->valid_extensions))
+         content_ctx.valid_extensions  = strdup(sysinfo->valid_extensions);
 
-      if (system->block_extract)
+      if (sysinfo->block_extract)
          content_ctx.flags            |= CONTENT_INFO_FLAG_BLOCK_EXTRACT;
-      if (system->need_fullpath)
+      if (sysinfo->need_fullpath)
          content_ctx.flags            |= CONTENT_INFO_FLAG_NEED_FULLPATH;
 
       content_ctx.subsystem.data       = sys_info->subsystem.data;
@@ -3066,13 +3132,15 @@ bool content_init(void)
       free(content_ctx.name_bps);
    if (content_ctx.name_ups)
       free(content_ctx.name_ups);
+   if (content_ctx.name_xdelta)
+      free(content_ctx.name_xdelta);
    if (content_ctx.directory_system)
       free(content_ctx.directory_system);
    if (content_ctx.directory_cache)
       free(content_ctx.directory_cache);
    if (content_ctx.valid_extensions)
       free(content_ctx.valid_extensions);
-   
+
    if (error_enum != MSG_UNKNOWN)
    {
       switch (error_enum)

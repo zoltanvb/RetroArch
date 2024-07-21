@@ -167,10 +167,10 @@ int system_property_get(const char *command,
    char *curpos                 = NULL;
    size_t buf_pos               = strlcpy(cmd, command, sizeof(cmd));
 
-   cmd[buf_pos]                 = ' ';
-   cmd[buf_pos+1]               = '\0';
+   cmd[  buf_pos]               = ' ';
+   cmd[++buf_pos]               = '\0';
 
-   buf_pos                      = strlcat(cmd, args, sizeof(cmd));
+   strlcpy(cmd + buf_pos, args, sizeof(cmd) - buf_pos);
 
    if (!(pipe = popen(cmd, "r")))
    {
@@ -203,33 +203,6 @@ int system_property_get(const char *command,
 #ifdef ANDROID
 /* forward declaration */
 bool android_run_events(void *data);
-
-void android_dpi_get_density(char *s, size_t len)
-{
-   static bool inited_once             = false;
-   static bool inited2_once            = false;
-   static char string[PROP_VALUE_MAX]  = {0};
-   static char string2[PROP_VALUE_MAX] = {0};
-   if (!inited_once)
-   {
-      system_property_get("getprop", "ro.sf.lcd_density", string);
-      inited_once = true;
-   }
-
-   if (!string_is_empty(string))
-   {
-      strlcpy(s, string, len);
-      return;
-   }
-
-   if (!inited2_once)
-   {
-      system_property_get("wm", "density", string2);
-      inited2_once = true;
-   }
-
-   strlcpy(s, string2, len);
-}
 
 void android_app_write_cmd(struct android_app *android_app, int8_t cmd)
 {
@@ -823,6 +796,23 @@ static void check_proc_acpi_sysfs_battery(const char *node,
       }
    }
 
+   fill_pathname_join_special(path, basenode, "type", sizeof(path));
+
+   if (!filestream_exists(path))
+      goto status;
+
+   if (filestream_read_file(path, (void**)&buf, &length) != 1)
+      goto status;
+
+    if (buf)
+   {
+      if (strstr((char*)buf, "Battery"))
+      *have_battery = true;
+      free(buf);
+      buf = NULL;
+   }
+
+status:
    fill_pathname_join_special(path, basenode, "status", sizeof(path));
 
    if (!filestream_exists(path))
@@ -1312,7 +1302,7 @@ static void frontend_unix_set_screen_brightness(int value)
 
    /* Device tree should have 'label = "backlight";' if control is desirable */
    filestream_read_file("/sys/class/backlight/backlight/max_brightness",
-                        &buffer, NULL);
+                        (void **)&buffer, NULL);
    if (buffer)
    {
       sscanf(buffer, "%u", &max_brightness);
@@ -1582,6 +1572,8 @@ static void frontend_unix_get_env(int *argc,
                   "shaders", sizeof(g_defaults.dirs[DEFAULT_DIR_SHADER]));
             fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], app_dir,
                   "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
+            fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OSK_OVERLAY], app_dir,
+                  "overlays/keyboards", sizeof(g_defaults.dirs[DEFAULT_DIR_OSK_OVERLAY]));
 
             fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE], app_dir,
                   "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE]));
@@ -1665,11 +1657,6 @@ static void frontend_unix_get_env(int *argc,
             fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS],
                   parent_path, "cheats",
                   sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
-#ifdef HAVE_VIDEO_LAYOUT
-            fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT],
-                  parent_path, "layouts",
-                  sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
-#endif
 
             fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CACHE],
                   parent_path, "temp",
@@ -1731,7 +1718,7 @@ static void frontend_unix_get_env(int *argc,
    {
       g_defaults.overlay_set    = true;
       g_defaults.overlay_enable = false;
-      strcpy_literal(g_defaults.settings_menu, "ozone");
+      strlcpy(g_defaults.settings_menu, "ozone", sizeof(g_defaults.settings_menu));
    }
 #else
    char base_path[PATH_MAX] = {0};
@@ -1746,13 +1733,13 @@ static void frontend_unix_get_env(int *argc,
 
    if (xdg)
    {
-      strlcpy(base_path, xdg, sizeof(base_path));
-      strlcat(base_path, "/retroarch", sizeof(base_path));
+      size_t _len = strlcpy(base_path, xdg, sizeof(base_path));
+      strlcpy(base_path + _len, "/retroarch", sizeof(base_path) - _len);
    }
    else if (home)
    {
-      strlcpy(base_path, home, sizeof(base_path));
-      strlcat(base_path, "/.config/retroarch", sizeof(base_path));
+      size_t _len = strlcpy(base_path, home, sizeof(base_path));
+      strlcpy(base_path + _len, "/.config/retroarch", sizeof(base_path) - _len);
    }
    else
       strlcpy(base_path, "retroarch", sizeof(base_path));
@@ -1772,12 +1759,25 @@ static void frontend_unix_get_env(int *argc,
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], base_path,
          "core_info", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
 #else
+#ifdef CORE_INFO_DIR
+   if (path_is_directory(CORE_INFO_DIR "/cores"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], CORE_INFO_DIR,
+            "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
+   else
+#endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_INFO], base_path,
          "cores", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_INFO]));
 #endif
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG], base_path,
          "autoconfig", sizeof(g_defaults.dirs[DEFAULT_DIR_AUTOCONFIG]));
 
+#ifdef ASSETS_DIR
+   if (path_is_directory(ASSETS_DIR "/assets"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS],
+            ASSETS_DIR,
+            "assets", sizeof(g_defaults.dirs[DEFAULT_DIR_ASSETS]));
+   else
+#endif
    if (path_is_directory("/usr/local/share/retroarch/assets"))
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_ASSETS],
             "/usr/local/share/retroarch",
@@ -1804,6 +1804,13 @@ static void frontend_unix_get_env(int *argc,
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER], base_path,
          "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
 #else
+#ifdef FILTERS_DIR
+   if (path_is_directory(FILTERS_DIR "/filters/audio"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
+            FILTERS_DIR,
+            "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
+   else
+#endif
    if (path_is_directory("/usr/local/share/retroarch/filters/audio"))
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER],
             "/usr/local/share/retroarch",
@@ -1824,6 +1831,13 @@ static void frontend_unix_get_env(int *argc,
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER], base_path,
             "filters/audio", sizeof(g_defaults.dirs[DEFAULT_DIR_AUDIO_FILTER]));
 
+#ifdef FILTERS_DIR
+   if (path_is_directory(FILTERS_DIR "/filters/video"))
+      fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
+            FILTERS_DIR,
+            "filters/video", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER]));
+   else
+#endif
    if (path_is_directory("/usr/local/share/retroarch/filters/video"))
       fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_FILTER],
             "/usr/local/share/retroarch",
@@ -1863,11 +1877,9 @@ static void frontend_unix_get_env(int *argc,
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CHEATS], base_path,
          "cheats", sizeof(g_defaults.dirs[DEFAULT_DIR_CHEATS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OVERLAY], base_path,
-         "overlay", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
-#ifdef HAVE_VIDEO_LAYOUT
-   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT], base_path,
-         "layouts", sizeof(g_defaults.dirs[DEFAULT_DIR_VIDEO_LAYOUT]));
-#endif
+         "overlays", sizeof(g_defaults.dirs[DEFAULT_DIR_OVERLAY]));
+   fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_OSK_OVERLAY], base_path,
+         "overlays/keyboards", sizeof(g_defaults.dirs[DEFAULT_DIR_OSK_OVERLAY]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS], base_path,
          "downloads", sizeof(g_defaults.dirs[DEFAULT_DIR_CORE_ASSETS]));
    fill_pathname_join(g_defaults.dirs[DEFAULT_DIR_SCREENSHOT], base_path,
@@ -2078,6 +2090,12 @@ static void frontend_unix_init(void *data)
          "getVolumeCount", "()I");
    GET_METHOD_ID(env, android_app->getVolumePath, class,
          "getVolumePath", "(Ljava/lang/String;)Ljava/lang/String;");
+   GET_METHOD_ID(env, android_app->inputGrabMouse, class,
+         "inputGrabMouse", "(Z)V");
+   GET_METHOD_ID(env, android_app->isScreenReaderEnabled, class,
+         "isScreenReaderEnabled", "()Z");
+   GET_METHOD_ID(env, android_app->accessibilitySpeak, class,
+         "accessibilitySpeak", "(Ljava/lang/String;)V");
 
    GET_OBJECT_CLASS(env, class, obj);
    GET_METHOD_ID(env, android_app->getStringExtra, class,
@@ -2237,21 +2255,23 @@ static int frontend_unix_parse_drive_list(void *data, bool load_content)
 
    if (xdg)
    {
-      strlcpy(base_path, xdg, sizeof(base_path));
-      strlcat(base_path, "/retroarch", sizeof(base_path));
+      size_t _len = strlcpy(base_path, xdg, sizeof(base_path));
+      strlcpy(base_path + _len, "/retroarch", sizeof(base_path) - _len);
    }
    else if (home)
    {
-      strlcpy(base_path, home, sizeof(base_path));
-      strlcat(base_path, "/.config/retroarch", sizeof(base_path));
+      size_t _len = strlcpy(base_path, home, sizeof(base_path));
+      strlcpy(base_path + _len, "/.config/retroarch", sizeof(base_path) - _len);
    }
 #endif
 
-   strlcpy(udisks_media_path, "/run/media", sizeof(udisks_media_path));
-   if (user)
    {
-      strlcat(udisks_media_path, "/", sizeof(udisks_media_path));
-      strlcat(udisks_media_path, user, sizeof(udisks_media_path));
+      size_t _len = strlcpy(udisks_media_path, "/run/media", sizeof(udisks_media_path));
+      if (user)
+      {
+         _len += strlcpy(udisks_media_path + _len, "/", sizeof(udisks_media_path) - _len);
+         strlcpy(udisks_media_path + _len, user, sizeof(udisks_media_path) - _len);
+      }
    }
 
    if (!string_is_empty(base_path))
@@ -2624,10 +2644,10 @@ static void frontend_unix_watch_path_for_changes(struct string_list *list, int f
       return;
    }
 
-   inotify_data = (inotify_data_t*)calloc(1, sizeof(*inotify_data));
-   inotify_data->fd = fd;
+   inotify_data            = (inotify_data_t*)calloc(1, sizeof(*inotify_data));
+   inotify_data->fd        = fd;
 
-   inotify_data->wd_list = int_vector_list_new();
+   inotify_data->wd_list   = int_vector_list_new();
    inotify_data->path_list = string_list_new();
 
    /* handle other flags here as new ones are added */
@@ -2667,7 +2687,7 @@ static bool frontend_unix_check_for_path_changes(path_change_data_t *change_data
    {
       i = 0;
 
-      while (i < length && i < sizeof(buffer))
+      while (i < length && i < (int)sizeof(buffer))
       {
          struct inotify_event *event = (struct inotify_event *)&buffer[i];
 
@@ -2684,7 +2704,7 @@ static bool frontend_unix_check_for_path_changes(path_change_data_t *change_data
              * to disk, to make sure that the new data is
              * immediately available when the file is re-read.
              */
-            for (j = 0; j < inotify_data->wd_list->count; j++)
+            for (j = 0; j < (int)inotify_data->wd_list->count; j++)
             {
                if (inotify_data->wd_list->data[j] == event->wd)
                {
@@ -2754,16 +2774,15 @@ enum retro_language frontend_unix_get_user_language(void)
       if (jstr)
       {
          const char *lang_str = (*env)->GetStringUTFChars(env, jstr, 0);
-         lang                 = rarch_get_language_from_iso(lang_str);
+         lang                 = retroarch_get_language_from_iso(lang_str);
 
          (*env)->ReleaseStringUTFChars(env, jstr, lang_str);
       }
    }
 #else
    char *envvar = getenv("LANG");
-
    if (envvar)
-      lang = rarch_get_language_from_iso(envvar);
+      return retroarch_get_language_from_iso(envvar);
 #endif
 #endif
    return lang;
@@ -2775,13 +2794,108 @@ static bool is_narrator_running_unix(void)
    return (kill(speak_pid, 0) == 0);
 }
 
+static const char* accessibility_unix_language_code(const char* language)
+{
+   if (
+         string_is_equal(language, "en") ||
+         string_is_equal(language, "it") ||
+         string_is_equal(language, "sv") ||
+         string_is_equal(language, "fr") ||
+         string_is_equal(language, "de") ||
+         string_is_equal(language, "he") ||
+         string_is_equal(language, "id") ||
+         string_is_equal(language, "es") ||
+         string_is_equal(language, "nl") ||
+         string_is_equal(language, "ro") ||
+         string_is_equal(language, "th") ||
+         string_is_equal(language, "ja") ||
+         string_is_equal(language, "sk") ||
+         string_is_equal(language, "hi") ||
+         string_is_equal(language, "ar") ||
+         string_is_equal(language, "hu") ||
+         string_is_equal(language, "el") ||
+         string_is_equal(language, "ru") ||
+         string_is_equal(language, "nb") ||
+         string_is_equal(language, "da") ||
+         string_is_equal(language, "fi") ||
+         string_is_equal(language, "tr") ||
+         string_is_equal(language, "ko") ||
+         string_is_equal(language, "pl") ||
+         string_is_equal(language, "cs") ||
+         string_is_equal(language, "eo") ||
+         string_is_equal(language, "vi") ||
+         string_is_equal(language, "fa") ||
+         string_is_equal(language, "uk") ||
+         string_is_equal(language, "be") ||
+         string_is_equal(language, "hr") ||
+         string_is_equal(language, "bg") ||
+         string_is_equal(language, "bn") ||
+         string_is_equal(language, "eu") ||
+         string_is_equal(language, "az") ||
+         string_is_equal(language, "sq") ||
+         string_is_equal(language, "af") ||
+         string_is_equal(language, "et") ||
+         string_is_equal(language, "ka") ||
+         string_is_equal(language, "gu") ||
+         string_is_equal(language, "ht") ||
+         string_is_equal(language, "is") ||
+         string_is_equal(language, "ga") ||
+         string_is_equal(language, "kn") ||
+         string_is_equal(language, "la") ||
+         string_is_equal(language, "lv") ||
+         string_is_equal(language, "lt") ||
+         string_is_equal(language, "mk") ||
+         string_is_equal(language, "ms") ||
+         string_is_equal(language, "mt") ||
+         string_is_equal(language, "sr") ||
+         string_is_equal(language, "sl") ||
+         string_is_equal(language, "sw") ||
+         string_is_equal(language, "ta") ||
+         string_is_equal(language, "te") ||
+         string_is_equal(language, "ur") ||
+         string_is_equal(language, "cy")
+      )
+      return language;
+   else if (
+         string_is_equal(language, "no") ||
+         string_is_equal(language, "nb")
+      )
+      return "nb";
+   else if (string_is_equal(language, "en_gb"))
+      return "en-gb";
+   else if (
+         string_is_equal(language, "ca") ||
+         string_is_equal(language, "ca_ES@valencia")
+      )
+      return "ca";
+   else if (
+         string_is_equal(language, "pt_pt") ||
+         string_is_equal(language, "pt")
+      )
+      return "pt";
+   else if (string_is_equal(language, "pt_bt"))
+      return "pt-br";
+   else if (
+         string_is_equal(language, "zh") ||
+         string_is_equal(language, "zh_cn") ||
+         string_is_equal(language, "zh_tw") ||
+         string_is_equal(language, "zh-CN") ||
+         string_is_equal(language, "zh-TW")
+      )
+      return "cmn";
+   else if (string_is_equal(language, "zh_hk"))
+      return "yue";
+   /* default voice as fallback */
+   return "en";
+}
+
 static bool accessibility_speak_unix(int speed,
       const char* speak_text, int priority)
 {
    int pid;
-   const char *language   = get_user_language_iso639_1(true);
-   char* voice_out        = (char*)malloc(3+strlen(language));
-   char* speed_out        = (char*)malloc(3+3);
+   const char* language   = accessibility_unix_language_code(get_user_language_iso639_1(true));
+   char* voice_out        = (char*)malloc(3 + strlen(language));
+   char* speed_out        = (char*)malloc(3 + 3);
    const char* speeds[10] = {"80", "100", "125", "150", "170", "210", "260", "310", "380", "450"};
 
    if (speed < 1)
@@ -2792,7 +2906,7 @@ static bool accessibility_speak_unix(int speed,
    voice_out[0] = '-';
    voice_out[1] = 'v';
    voice_out[2] = '\0';
-   strlcat(voice_out, language, 5);
+   strlcat(voice_out, language, 3 + strlen(language));
 
    speed_out[0] = '-';
    speed_out[1] = 's';
@@ -2814,28 +2928,32 @@ static bool accessibility_speak_unix(int speed,
    }
 
    pid = fork();
-   if (pid < 0)
+   switch (pid)
    {
-      /* error */
-      RARCH_LOG("ERROR: could not fork for espeak.\n");
-   }
-   else if (pid > 0)
-   {
-      /* parent process */
-      speak_pid = pid;
+      case 0:
+         {
+            /* child process: replace process with the espeak command */
+            char* cmd[] = { (char*) "espeak", NULL, NULL, NULL, NULL };
+            cmd[1] = voice_out;
+            cmd[2] = speed_out;
+            cmd[3] = (char*)speak_text;
+            execvp("espeak", cmd);
 
-      /* Tell the system that we'll ignore the exit status of the child
-       * process.  This prevents zombie processes. */
-      signal(SIGCHLD,SIG_IGN);
-   }
-   else
-   {
-      /* child process: replace process with the espeak command */
-      char* cmd[] = { (char*) "espeak", NULL, NULL, NULL, NULL};
-      cmd[1] = voice_out;
-      cmd[2] = speed_out;
-      cmd[3] = (char*)speak_text;
-      execvp("espeak", cmd);
+            RARCH_WARN("Could not execute espeak.\n");
+            /* Prevent interfere with the parent process */
+            _exit(EXIT_FAILURE);
+         }
+      case -1:
+         RARCH_ERR("Could not fork for espeak.\n");
+      default:
+         {
+            /* parent process */
+            speak_pid = pid;
+
+            /* Tell the system that we'll ignore the exit status of the child
+             * process.  This prevents zombie processes. */
+            signal(SIGCHLD, SIG_IGN);
+         }
    }
 
 end:
@@ -2843,6 +2961,40 @@ end:
       free(voice_out);
    if (speed_out)
       free(speed_out);
+   return true;
+}
+#endif
+
+#ifdef ANDROID
+bool is_screen_reader_enabled(void)
+{
+   JNIEnv *env = jni_thread_getenv();
+   jboolean                  jbool   = JNI_FALSE;
+
+   if (env != NULL)
+      CALL_BOOLEAN_METHOD(env, jbool,
+            g_android->activity->clazz, g_android->isScreenReaderEnabled);
+
+   return jbool == JNI_TRUE;
+}
+
+static bool is_narrator_running_android(void)
+{
+   /* Screen reader is speaking on Android is controlled by the operating
+    * system, so return false to align with the rest of the API. */
+   return false;
+}
+
+static bool accessibility_speak_android(int speed,
+      const char* speak_text, int priority)
+{
+   JNIEnv *env = jni_thread_getenv();
+
+   if (env != NULL)
+      CALL_VOID_METHOD_PARAM(env, g_android->activity->clazz,
+            g_android->accessibilitySpeak,
+            (*env)->NewStringUTF(env, speak_text));
+
    return true;
 }
 #endif
@@ -2904,8 +3056,8 @@ frontend_ctx_driver_t frontend_ctx_unix = {
    is_narrator_running_unix,     /* is_narrator_running */
    accessibility_speak_unix,     /* accessibility_speak */
 #else
-   NULL,                         /* is_narrator_running */
-   NULL,                         /* accessibility_speak */
+   is_narrator_running_android,                         /* is_narrator_running */
+   accessibility_speak_android,                         /* accessibility_speak */
 #endif
 #ifdef FERAL_GAMEMODE
    frontend_unix_set_gamemode,

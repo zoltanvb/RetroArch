@@ -37,7 +37,7 @@ static bool string_list_deinitialize_internal(struct string_list *list)
    if (list->elems)
    {
       unsigned i;
-      for (i = 0; i < list->size; i++)
+      for (i = 0; i < (unsigned)list->size; i++)
       {
          if (list->elems[i].data)
             free(list->elems[i].data);
@@ -270,9 +270,9 @@ void string_list_join_concat(char *buffer, size_t size,
 
    for (i = 0; i < list->size; i++)
    {
-      strlcat(buffer, list->elems[i].data, size);
+      size_t _len = strlcat(buffer, list->elems[i].data, size);
       if ((i + 1) < list->size)
-         strlcat(buffer, delim, size);
+         strlcpy(buffer + _len, delim, size - _len);
    }
 }
 
@@ -476,17 +476,18 @@ int string_list_find_elem(const struct string_list *list, const char *elem)
 bool string_list_find_elem_prefix(const struct string_list *list,
       const char *prefix, const char *elem)
 {
-   size_t i;
-   char prefixed[255];
-   if (!list)
-      return false;
-   strlcpy(prefixed, prefix, sizeof(prefixed));
-   strlcat(prefixed, elem,   sizeof(prefixed));
-   for (i = 0; i < list->size; i++)
+   if (list)
    {
-      if (     string_is_equal_noncase(list->elems[i].data, elem)
-            || string_is_equal_noncase(list->elems[i].data, prefixed))
-         return true;
+      size_t i;
+      char prefixed[255];
+      size_t _len  = strlcpy(prefixed, prefix, sizeof(prefixed));
+      strlcpy(prefixed + _len, elem, sizeof(prefixed) - _len);
+      for (i = 0; i < list->size; i++)
+      {
+         if (     string_is_equal_noncase(list->elems[i].data, elem)
+               || string_is_equal_noncase(list->elems[i].data, prefixed))
+            return true;
+      }
    }
    return false;
 }
@@ -494,21 +495,19 @@ bool string_list_find_elem_prefix(const struct string_list *list,
 struct string_list *string_list_clone(const struct string_list *src)
 {
    size_t i;
-   struct string_list_elem 
-      *elems              = NULL;
-   struct string_list 
-      *dest               = (struct string_list*)
+   struct string_list_elem *elems = NULL;
+   struct string_list *dest       = (struct string_list*)
       malloc(sizeof(struct string_list));
 
    if (!dest)
       return NULL;
 
-   dest->elems            = NULL;
-   dest->size             = src->size;
+   dest->elems               = NULL;
+   dest->size                = src->size;
    if (src->cap < dest->size)
-      dest->cap           = dest->size;
-   else 
-      dest->cap           = src->cap;
+      dest->cap              = dest->size;
+   else
+      dest->cap              = src->cap;
 
    if (!(elems = (struct string_list_elem*)
       calloc(dest->cap, sizeof(struct string_list_elem))))
@@ -517,7 +516,7 @@ struct string_list *string_list_clone(const struct string_list *src)
       return NULL;
    }
 
-   dest->elems            = elems;
+   dest->elems               = elems;
 
    for (i = 0; i < src->size; i++)
    {
@@ -530,8 +529,11 @@ struct string_list *string_list_clone(const struct string_list *src)
       if (len != 0)
       {
          char *result        = (char*)malloc(len + 1);
-         strcpy(result, _src);
-         dest->elems[i].data = result;
+         if (result)
+         {
+            strcpy(result, _src);
+            dest->elems[i].data = result;
+         }
       }
    }
 

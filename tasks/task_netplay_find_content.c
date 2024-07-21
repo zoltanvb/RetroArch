@@ -543,6 +543,11 @@ static void task_netplay_crc_scan_callback(retro_task_t *task,
          {
             const char *content_path        = (state->state & STATE_RELOAD) ?
                data->current.content_path : data->content_paths.elems[0].data;
+#if IOS
+            char tmp[PATH_MAX_LENGTH];
+            fill_pathname_expand_special(tmp, content_path, sizeof(tmp));
+            content_path = tmp;
+#endif
 #ifdef HAVE_DYNAMIC
             content_ctx_info_t content_info = {0};
 
@@ -751,7 +756,7 @@ bool task_push_netplay_crc_scan(uint32_t crc, const char *content,
    const char *pbasename, *pcontent, *psubsystem;
    core_info_list_t         *coreinfos = NULL;
    settings_t               *settings  = config_get_ptr();
-   struct retro_system_info *system    = &runloop_state_get_ptr()->system.info;
+   struct retro_system_info *sysinfo    = &runloop_state_get_ptr()->system.info;
 
    /* Do not run more than one CRC scan task at a time. */
    if (scan_state.running)
@@ -841,7 +846,7 @@ bool task_push_netplay_crc_scan(uint32_t crc, const char *content,
          string_list_clone(path_get_subsystem_list());
 
    data->current.core_loaded =
-      string_is_equal_case_insensitive(system->library_name, core);
+      string_is_equal_case_insensitive(sysinfo->library_name, core);
 
    scan_state.state   = STATE_NONE;
    scan_state.running = true;
@@ -894,9 +899,7 @@ bool task_push_netplay_content_reload(const char *hostname)
       strlcpy(data->hostname, hostname, sizeof(data->hostname));
 
    flags = content_get_flags();
-   if (flags & CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT)
-      scan_state.state |= STATE_LOAD_CONTENTLESS;
-   else if (flags & CONTENT_ST_FLAG_IS_INITED)
+   if (flags & CONTENT_ST_FLAG_IS_INITED)
    {
       const char *psubsystem = path_get(RARCH_PATH_SUBSYSTEM);
 
@@ -928,6 +931,10 @@ bool task_push_netplay_content_reload(const char *hostname)
          }
       }
    }
+
+   if ((flags & CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT) &&
+         !(scan_state.state & (STATE_LOAD|STATE_LOAD_SUBSYSTEM)))
+      scan_state.state |= STATE_LOAD_CONTENTLESS;
 
    data->current.core_loaded = true;
 

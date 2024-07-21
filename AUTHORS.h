@@ -231,6 +231,7 @@ Jean-Sébastien Guay (Skylark13)
 Jeff (jeffbdavenport)
 Jeff Sousa (LordeIlluminati)
 jess (winneon)
+Jesse Talavera-Greenberg (JesseTG)
 Joan Coll Cerdán (johanbcn)
 Job Adrian Salinas Gonzalez (efylan)
 Joe Osborn (JoeOsborn)
@@ -314,12 +315,12 @@ Mike Swanson (chungy)
 mikeOSX
 minucce
 misson20000
+Mohmoud (esoptron) (Hedonium)
 Monroe88
 Morgane (MorganeAD)
 mprobinson
 MrHuu
 MrJs (mrjschulte)
-mudlord
 Muhamed Hobi (mmhobi7)
 muzuiget
 N/A (inactive123)
@@ -332,7 +333,6 @@ nayslayer
 negativeExponent
 Neil Barkhina (nbarkhina)
 neil4
-Nephilim (Nephil1m)
 netux79
 nfnty
 nfp0

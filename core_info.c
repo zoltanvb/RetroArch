@@ -15,7 +15,6 @@
  *  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <retro_assert.h>
 #include <compat/strl.h>
 #include <string/stdstring.h>
 #include <file/config_file.h>
@@ -262,8 +261,8 @@ static bool CCJSONStringHandler(void *context,
 {
    CCJSONContext *pCtx = (CCJSONContext*)context;
 
-   if (     pCtx->current_string_val 
-         && length 
+   if (     pCtx->current_string_val
+         && length
          && !string_is_empty(pValue))
    {
       if (*pCtx->current_string_val)
@@ -274,7 +273,7 @@ static bool CCJSONStringHandler(void *context,
       {
          if (*pCtx->current_string_list_val)
             string_list_free(*pCtx->current_string_list_val);
-         *pCtx->current_string_list_val = 
+         *pCtx->current_string_list_val =
             string_split(*pCtx->current_string_val, "|");
       }
    }
@@ -316,7 +315,7 @@ static bool CCJSONStartObjectHandler(void *context)
 
    pCtx->object_depth++;
 
-   if (     (pCtx->object_depth == 1) 
+   if (     (pCtx->object_depth == 1)
          && (pCtx->array_depth  == 0))
    {
       if (pCtx->core_info_cache_list)
@@ -324,7 +323,7 @@ static bool CCJSONStartObjectHandler(void *context)
       if (!(pCtx->core_info_cache_list = core_info_cache_list_new()))
          return false;
    }
-   else if ((pCtx->object_depth == 2) 
+   else if ((pCtx->object_depth == 2)
          && (pCtx->array_depth  == 1))
    {
       if (pCtx->core_info)
@@ -342,7 +341,7 @@ static bool CCJSONStartObjectHandler(void *context)
       pCtx->core_info->savestate_support_level =
             CORE_INFO_SAVESTATE_DETERMINISTIC;
    }
-   else if ((pCtx->object_depth == 3) 
+   else if ((pCtx->object_depth == 3)
          && (pCtx->array_depth  == 2))
    {
       if (pCtx->to_firmware)
@@ -350,7 +349,7 @@ static bool CCJSONStartObjectHandler(void *context)
          size_t new_idx            = pCtx->core_info->firmware_count;
          core_info_firmware_t *tmp = (core_info_firmware_t*)
                realloc(pCtx->core_info->firmware,
-                      (pCtx->core_info->firmware_count + 1) 
+                      (pCtx->core_info->firmware_count + 1)
                      * sizeof(core_info_firmware_t));
 
          if (!tmp)
@@ -373,7 +372,7 @@ static bool CCJSONEndObjectHandler(void *context)
 {
    CCJSONContext *pCtx = (CCJSONContext*)context;
 
-   if (     (pCtx->object_depth == 2) 
+   if (     (pCtx->object_depth == 2)
          && (pCtx->array_depth  == 1)
          && (pCtx->core_info))
    {
@@ -382,11 +381,10 @@ static bool CCJSONEndObjectHandler(void *context)
       free(pCtx->core_info);
       pCtx->core_info = NULL;
    }
-   else if ((pCtx->object_depth == 3) 
+   else if ((pCtx->object_depth == 3)
          && (pCtx->array_depth == 1))
       pCtx->to_core_file_id = false;
 
-   retro_assert(pCtx->object_depth > 0);
    pCtx->object_depth--;
 
    return true;
@@ -406,7 +404,6 @@ static bool CCJSONEndArrayHandler(void *context)
    if ((pCtx->object_depth == 2) && (pCtx->array_depth == 2))
       pCtx->to_firmware = false;
 
-   retro_assert(pCtx->array_depth > 0);
    pCtx->array_depth--;
 
    return true;
@@ -468,7 +465,7 @@ static void core_info_copy(core_info_t *src, core_info_t *dst)
          dst->firmware_count = 0;
    }
 
-   dst->core_file_id.str              = src->core_file_id.str 
+   dst->core_file_id.str              = src->core_file_id.str
       ? strdup(src->core_file_id.str) : NULL;
    dst->core_file_id.hash             = src->core_file_id.hash;
 
@@ -673,7 +670,7 @@ static void core_info_cache_add(
 #ifdef HAVE_CORE_INFO_CACHE
 static core_info_cache_list_t *core_info_cache_list_new(void)
 {
-   core_info_cache_list_t *core_info_cache_list = 
+   core_info_cache_list_t *core_info_cache_list =
       (core_info_cache_list_t *)malloc(sizeof(*core_info_cache_list));
    if (!core_info_cache_list)
       return NULL;
@@ -740,7 +737,7 @@ static core_info_cache_list_t *core_info_cache_read(const char *info_dir)
    /* Parse info cache file */
    if (!(parser = rjson_open_stream(file)))
    {
-      RARCH_ERR("[Core Info] Failed to create JSON parser\n");
+      RARCH_ERR("[Core Info]: Failed to create JSON parser.\n");
       goto end;
    }
 
@@ -762,14 +759,14 @@ static core_info_cache_list_t *core_info_cache_read(const char *info_dir)
          NULL) /* Unused null handler */
          != RJSON_DONE)
    {
-      RARCH_WARN("[Core Info] Error parsing chunk:\n---snip---\n%.*s\n---snip---\n",
+      RARCH_WARN("[Core Info]: Error parsing chunk:\n---snip---\n%.*s\n---snip---\n",
             rjson_get_source_context_len(parser),
             rjson_get_source_context_buf(parser));
-      RARCH_WARN("[Core Info] Error: Invalid JSON at line %d, column %d - %s.\n",
+      RARCH_WARN("[Core Info]: Error: Invalid JSON at line %d, column %d - %s.\n",
             (int)rjson_get_source_line(parser),
             (int)rjson_get_source_column(parser),
-            (*rjson_get_error(parser) 
-             ? rjson_get_error(parser) 
+            (*rjson_get_error(parser)
+             ? rjson_get_error(parser)
              : "format error"));
 
       /* Info cache is corrupt - discard it */
@@ -798,8 +795,8 @@ static core_info_cache_list_t *core_info_cache_read(const char *info_dir)
        || !string_is_equal(core_info_cache_list->version,
             CORE_INFO_CACHE_VERSION))
    {
-      RARCH_WARN("[Core Info] Core info cache has invalid version"
-            " - forcing refresh (required v%s, found v%s)\n",
+      RARCH_WARN("[Core Info]: Core info cache has invalid version"
+            " - forcing refresh (required v%s, found v%s).\n",
             CORE_INFO_CACHE_VERSION,
             core_info_cache_list->version);
 
@@ -845,14 +842,14 @@ static bool core_info_cache_write(core_info_cache_list_t *list, const char *info
 
    if (!file)
    {
-      RARCH_ERR("[Core Info] Failed to write to core info cache file: %s\n", file_path);
+      RARCH_ERR("[Core Info]: Failed to write core info cache file: \"%s\".\n", file_path);
       return false;
    }
 
    /* Write info cache */
    if (!(writer = rjsonwriter_open_stream(file)))
    {
-      RARCH_ERR("[Core Info] Failed to create JSON writer\n");
+      RARCH_ERR("[Core Info]: Failed to create JSON writer.\n");
       goto end;
    }
 
@@ -1175,7 +1172,7 @@ static bool core_info_cache_write(core_info_cache_list_t *list, const char *info
    rjsonwriter_raw(writer, "\n", 1);
    rjsonwriter_free(writer);
 
-   RARCH_LOG("[Core Info] Wrote to cache file: %s\n", file_path);
+   RARCH_LOG("[Core Info]: Wrote to cache file: \"%s\".\n", file_path);
    success = true;
 
    /* Remove 'force refresh' file, if required */
@@ -1343,7 +1340,7 @@ static void core_info_path_list_free(core_path_list_t *path_list)
 static core_path_list_t *core_info_path_list_new(const char *core_dir,
       const char *core_exts, bool show_hidden_files)
 {
-   size_t i;
+   size_t i, _len;
    char exts[32];
    core_path_list_t *path_list       = NULL;
    struct string_list *core_ext_list = NULL;
@@ -1371,19 +1368,19 @@ static core_path_list_t *core_info_path_list_new(const char *core_dir,
          calloc(1, sizeof(*path_list->standalone_exempt_list));
 
    if (   !path_list->dir_list
-       || !path_list->core_list 
+       || !path_list->core_list
        || !path_list->lock_list
        || !path_list->standalone_exempt_list)
       goto error;
 
    /* Get list of file extensions to include
     * > core + lock */
-   strlcpy(exts, core_exts, sizeof(exts));
+   _len = strlcpy(exts, core_exts, sizeof(exts));
 #if defined(HAVE_DYNAMIC)
    /* > 'standalone exempt' */
-   strlcat(exts, "|lck|lsae", sizeof(exts));
+   strlcpy(exts + _len, "|lck|lsae", sizeof(exts) - _len);
 #else
-   strlcat(exts, "|lck",      sizeof(exts));
+   strlcpy(exts + _len, "|lck",      sizeof(exts) - _len);
 #endif
 
    /* Fetch core directory listing */
@@ -1424,7 +1421,7 @@ static core_path_list_t *core_info_path_list_new(const char *core_dir,
                sizeof(*path_list->standalone_exempt_list->list));
 
    if (   !path_list->core_list->list
-       || !path_list->lock_list->list 
+       || !path_list->lock_list->list
        || !path_list->standalone_exempt_list->list)
       goto error;
 
@@ -1490,13 +1487,11 @@ static bool core_info_path_is_locked(
    if (lock_list->size < 1)
       return false;
 
-   len                  = strlcpy(lock_filename, core_file_name,
+   len = strlcpy(lock_filename, core_file_name,
          sizeof(lock_filename));
-   lock_filename[len  ] = '.';
-   lock_filename[len+1] = 'l';
-   lock_filename[len+2] = 'c';
-   lock_filename[len+3] = 'k';
-   lock_filename[len+4] = '\0';
+   strlcpy(lock_filename       + len,
+         ".lck",
+         sizeof(lock_filename) - len);
 
    hash = core_info_hash_string(lock_filename);
 
@@ -1523,14 +1518,11 @@ static bool core_info_path_is_standalone_exempt(
    if (exempt_list->size < 1)
       return false;
 
-   len                    = strlcpy(exempt_filename, core_file_name,
+   len = strlcpy(exempt_filename, core_file_name,
          sizeof(exempt_filename));
-   exempt_filename[len  ] = '.';
-   exempt_filename[len+1] = 'l';
-   exempt_filename[len+2] = 's';
-   exempt_filename[len+3] = 'a';
-   exempt_filename[len+4] = 'e';
-   exempt_filename[len+5] = '\0';
+   strlcpy(exempt_filename       + len,
+         ".lsae",
+         sizeof(exempt_filename) - len);
 
    hash = core_info_hash_string(exempt_filename);
 
@@ -1560,6 +1552,15 @@ static bool core_info_get_file_id(const char *core_filename,
    /* > Remove extension */
    strlcpy(core_file_id, core_filename, len);
    path_remove_extension(core_file_id);
+#if IOS
+   /* iOS framework names, to quote Apple:
+    * "must contain only alphanumerics, dots, hyphens and must not end with a dot."
+    *
+    * Since core names include underscore, which is not allowed, but not dot,
+    * which is, we change underscore to dot. Here, we need to change it back.
+    */
+   string_replace_all_chars(core_file_id, '.', '_');
+#endif
 
    /* > Remove suffix */
    last_underscore = (char*)strrchr(core_file_id, '_');
@@ -1603,6 +1604,8 @@ static void core_info_resolve_firmware(
       core_info_t *info, config_file_t *conf)
 {
    unsigned i;
+   size_t _len;
+   char prefix[12];
    unsigned firmware_count        = 0;
    core_info_firmware_t *firmware = NULL;
 
@@ -1615,26 +1618,25 @@ static void core_info_resolve_firmware(
    if (!firmware)
       return;
 
+   _len = strlcpy(prefix, "firmware", sizeof(prefix));
+
    for (i = 0; i < firmware_count; i++)
    {
-      char prefix[12];
-      char path_key[64];
-      char desc_key[64];
-      char opt_key[64];
+      size_t _len2;
+      char key[64];
       struct config_entry_list *entry = NULL;
       bool tmp_bool                   = false;
 
-      prefix[0]   = '\0';
+      snprintf(prefix + _len, sizeof(prefix) - _len, "%u_", i);
+      _len2 = strlcpy(key, prefix, sizeof(key));
+      strlcpy(key + _len2, "opt", sizeof(key) - _len2);
 
-      snprintf(prefix,   sizeof(prefix),   "firmware%u_", i);
-      strlcpy(path_key,  prefix,           sizeof(path_key));
-      strlcat(path_key,  "path",           sizeof(path_key));
-      strlcpy(desc_key,  prefix,           sizeof(desc_key));
-      strlcat(desc_key,  "desc",           sizeof(desc_key));
-      strlcpy(opt_key,   prefix,           sizeof(opt_key));
-      strlcat(opt_key,   "opt",            sizeof(opt_key));
+      if (config_get_bool(conf, key, &tmp_bool))
+         firmware[i].optional = tmp_bool;
 
-      entry = config_get_entry(conf, path_key);
+      strlcpy(key + _len2, "path", sizeof(key) - _len2);
+
+      entry = config_get_entry(conf, key);
 
       if (entry && !string_is_empty(entry->value))
       {
@@ -1642,16 +1644,15 @@ static void core_info_resolve_firmware(
          entry->value     = NULL;
       }
 
-      entry = config_get_entry(conf, desc_key);
+      strlcpy(key + _len2, "desc", sizeof(key) - _len2);
+
+      entry = config_get_entry(conf, key);
 
       if (entry && !string_is_empty(entry->value))
       {
          firmware[i].desc = entry->value;
          entry->value     = NULL;
       }
-
-      if (config_get_bool(conf, opt_key , &tmp_bool))
-         firmware[i].optional = tmp_bool;
    }
 
    info->firmware_count = firmware_count;
@@ -1898,12 +1899,13 @@ static void core_info_list_resolve_all_extensions(
 
    for (i = 0; i < core_info_list->count; i++)
    {
+      size_t _len;
       if (!core_info_list->list[i].supported_extensions)
          continue;
 
-      strlcat(core_info_list->all_ext,
+      _len = strlcat(core_info_list->all_ext,
             core_info_list->list[i].supported_extensions, all_ext_len);
-      strlcat(core_info_list->all_ext, "|", all_ext_len);
+      strlcpy(core_info_list->all_ext + _len, "|", all_ext_len - _len);
    }
 #ifdef HAVE_7ZIP
    strlcat(core_info_list->all_ext, "7z|", all_ext_len);
@@ -2335,8 +2337,8 @@ bool core_info_init_list(
    core_info_state_t *p_coreinfo          = &core_info_st;
    if (!(p_coreinfo->curr_list            = core_info_list_new(
                dir_cores,
-               !string_is_empty(path_info) 
-               ? path_info 
+               !string_is_empty(path_info)
+               ? path_info
                : dir_cores,
                exts,
                dir_show_hidden_files,
@@ -2480,7 +2482,7 @@ void core_info_list_get_supported_cores(core_info_list_t *core_info_list,
  *
  * e.g.:
  *   snes9x_libretro.dll and snes9x_libretro_android.so are matched
- *   snes9x__2005_libretro.dll and snes9x_libretro_android.so are 
+ *   snes9x__2005_libretro.dll and snes9x_libretro_android.so are
  *   NOT matched
  */
 bool core_info_core_file_id_is_equal(const char *core_path_a,
@@ -2593,7 +2595,7 @@ bool core_info_list_get_display_name(
    info = core_info_find_internal(
          core_info_list, core_path);
 
-   if (   s 
+   if (   s
        && info
        && !string_is_empty(info->display_name))
    {
@@ -2612,7 +2614,7 @@ bool core_info_list_get_display_name(
 core_updater_info_t *core_info_get_core_updater_info(
       const char *info_path)
 {
-   struct config_entry_list 
+   struct config_entry_list
       *entry                 = NULL;
    bool tmp_bool             = false;
    core_updater_info_t *info = NULL;
@@ -2704,7 +2706,7 @@ static int core_info_qsort_func_display_name(const core_info_t *a,
 {
    if (     !a
          || !b
-         || string_is_empty(a->display_name) 
+         || string_is_empty(a->display_name)
          || string_is_empty(b->display_name))
       return 0;
    return strcasecmp(a->display_name, b->display_name);
@@ -2715,7 +2717,7 @@ static int core_info_qsort_func_core_name(const core_info_t *a,
 {
    if (     !a
          || !b
-         || string_is_empty(a->core_name) 
+         || string_is_empty(a->core_name)
          || string_is_empty(b->core_name))
       return 0;
    return strcasecmp(a->core_name, b->core_name);
@@ -2727,7 +2729,7 @@ static int core_info_qsort_func_system_name(const core_info_t *a,
    if (
             !a
          || !b
-         || string_is_empty(a->systemname) 
+         || string_is_empty(a->systemname)
          || string_is_empty(b->systemname))
       return 0;
    return strcasecmp(a->systemname, b->systemname);
@@ -2780,6 +2782,10 @@ void core_info_qsort(core_info_list_t *core_info_list,
 bool core_info_current_supports_savestate(void)
 {
    core_info_state_t *p_coreinfo = &core_info_st;
+   settings_t        *settings   = config_get_ptr();
+
+   if (settings->bools.core_info_savestate_bypass)
+      return true;
 
    /* If no core is currently loaded, assume
     * by default that all savestate functionality
@@ -2794,6 +2800,10 @@ bool core_info_current_supports_savestate(void)
 bool core_info_current_supports_rewind(void)
 {
    core_info_state_t *p_coreinfo = &core_info_st;
+   settings_t        *settings   = config_get_ptr();
+
+   if (settings->bools.core_info_savestate_bypass)
+      return true;
 
    /* If no core is currently loaded, assume
     * by default that all savestate functionality
@@ -2808,6 +2818,10 @@ bool core_info_current_supports_rewind(void)
 bool core_info_current_supports_netplay(void)
 {
    core_info_state_t *p_coreinfo = &core_info_st;
+   settings_t        *settings   = config_get_ptr();
+
+   if (settings->bools.core_info_savestate_bypass)
+      return true;
 
    /* If no core is currently loaded, assume
     * by default that all savestate functionality
@@ -2822,6 +2836,10 @@ bool core_info_current_supports_netplay(void)
 bool core_info_current_supports_runahead(void)
 {
    core_info_state_t *p_coreinfo = &core_info_st;
+   settings_t        *settings   = config_get_ptr();
+
+   if (settings->bools.core_info_savestate_bypass)
+      return true;
 
    /* If no core is currently loaded, assume
     * by default that all savestate functionality
@@ -2876,7 +2894,7 @@ static bool core_info_update_core_aux_file(const char *path, bool create)
  *   core info list this is *not* thread safe */
 bool core_info_set_core_lock(const char *core_path, bool lock)
 {
-   size_t len;
+   size_t _len;
    core_info_t *core_info = NULL;
    char lock_file_path[PATH_MAX_LENGTH];
 
@@ -2895,13 +2913,11 @@ bool core_info_set_core_lock(const char *core_path, bool lock)
       return false;
 
    /* Get lock file path */
-   len                   = strlcpy(
-         lock_file_path, core_info->path, sizeof(lock_file_path));
-   lock_file_path[len  ] = '.';
-   lock_file_path[len+1] = 'l';
-   lock_file_path[len+2] = 'c';
-   lock_file_path[len+3] = 'k';
-   lock_file_path[len+4] = '\0';
+   _len  = strlcpy(lock_file_path, core_info->path,
+          sizeof(lock_file_path));
+   strlcpy(lock_file_path       + _len,
+         ".lck",
+         sizeof(lock_file_path) - _len);
 
    /* Create or delete lock file, as required */
    if (!core_info_update_core_aux_file(lock_file_path, lock))
@@ -2925,7 +2941,7 @@ bool core_info_set_core_lock(const char *core_path, bool lock)
  *   must be checked externally */
 bool core_info_get_core_lock(const char *core_path, bool validate_path)
 {
-   size_t len;
+   size_t _len;
    core_info_t *core_info     = NULL;
    const char *core_file_path = NULL;
    bool is_locked             = false;
@@ -2956,14 +2972,11 @@ bool core_info_get_core_lock(const char *core_path, bool validate_path)
       return false;
 
    /* Get lock file path */
-   len                   = strlcpy(
-         lock_file_path, core_file_path,
+   _len = strlcpy(lock_file_path, core_file_path,
          sizeof(lock_file_path));
-   lock_file_path[len  ] = '.';
-   lock_file_path[len+1] = 'l';
-   lock_file_path[len+2] = 'c';
-   lock_file_path[len+3] = 'k';
-   lock_file_path[len+4] = '\0';
+   strlcpy(lock_file_path       + _len,
+         ".lck",
+         sizeof(lock_file_path) - _len);
 
    /* Check whether lock file exists */
    is_locked = path_is_valid(lock_file_path);
@@ -3003,14 +3016,11 @@ bool core_info_set_core_standalone_exempt(const char *core_path, bool exempt)
       return false;
 
    /* Get 'standalone exempt' file path */
-   _len                     = strlcpy(exempt_file_path, core_info->path,
+   _len = strlcpy(exempt_file_path, core_info->path,
          sizeof(exempt_file_path));
-   exempt_file_path[_len  ] = '.';
-   exempt_file_path[_len+1] = 'l';
-   exempt_file_path[_len+2] = 's';
-   exempt_file_path[_len+3] = 'a';
-   exempt_file_path[_len+4] = 'e';
-   exempt_file_path[_len+5] = '\0';
+   strlcpy(exempt_file_path       + _len,
+         ".lsae",
+         sizeof(exempt_file_path) - _len);
 
    /* Create or delete 'standalone exempt' file, as required */
    if (core_info_update_core_aux_file(exempt_file_path, exempt))
@@ -3046,15 +3056,11 @@ bool core_info_get_core_standalone_exempt(const char *core_path)
       return false;
 
    /* Get 'standalone exempt' file path */
-   _len                     = strlcpy(
-         exempt_file_path, core_info->path,
+   _len = strlcpy(exempt_file_path, core_info->path,
          sizeof(exempt_file_path));
-   exempt_file_path[_len  ] = '.';
-   exempt_file_path[_len+1] = 'l';
-   exempt_file_path[_len+2] = 's';
-   exempt_file_path[_len+3] = 'a';
-   exempt_file_path[_len+4] = 'e';
-   exempt_file_path[_len+5] = '\0';
+   strlcpy(exempt_file_path       + _len,
+         ".lsae",
+         sizeof(exempt_file_path) - _len);
 
    /* Check whether 'standalone exempt' file exists */
    if (path_is_valid(exempt_file_path))

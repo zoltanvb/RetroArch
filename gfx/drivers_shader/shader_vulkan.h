@@ -27,6 +27,8 @@
 
 #include "../include/vulkan/vulkan.h"
 
+#define VULKAN_ROLLING_SCANLINE_SIMULATION
+
 RETRO_BEGIN_DECLS
 
 typedef struct vulkan_filter_chain vulkan_filter_chain_t;
@@ -120,8 +122,22 @@ void vulkan_filter_chain_set_frame_count_period(vulkan_filter_chain_t *chain,
       unsigned pass,
       unsigned period);
 
+void vulkan_filter_chain_set_shader_subframes(vulkan_filter_chain_t *chain,
+      uint32_t tot_subframes);
+
+void vulkan_filter_chain_set_current_shader_subframe(vulkan_filter_chain_t *chain,
+      uint32_t cur_subframe);
+
+#ifdef VULKAN_ROLLING_SCANLINE_SIMULATION
+void vulkan_filter_chain_set_simulate_scanline(vulkan_filter_chain_t *chain,
+      bool simulate_scanline);
+#endif // VULKAN_ROLLING_SCANLINE_SIMULATION
+
 void vulkan_filter_chain_set_frame_direction(vulkan_filter_chain_t *chain,
       int32_t direction);
+
+void vulkan_filter_chain_set_rotation(vulkan_filter_chain_t *chain,
+      uint32_t rot);
 
 void vulkan_filter_chain_build_offscreen_passes(vulkan_filter_chain_t *chain,
       VkCommandBuffer cmd, const VkViewport *vp);

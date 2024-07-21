@@ -62,16 +62,13 @@ enum rarch_ctl_state
    RARCH_CTL_UNSET_BPS_PREF,
    RARCH_CTL_UNSET_UPS_PREF,
    RARCH_CTL_UNSET_IPS_PREF,
+   RARCH_CTL_UNSET_XDELTA_PREF,
 
 #ifdef HAVE_CONFIGFILE
    /* Block config read */
    RARCH_CTL_SET_BLOCK_CONFIG_READ,
    RARCH_CTL_UNSET_BLOCK_CONFIG_READ,
 #endif
-
-   RARCH_CTL_HAS_SET_SUBSYSTEMS,
-
-   RARCH_CTL_SET_IDLE,
 
    RARCH_CTL_SET_WINDOWED_SCALE,
 
@@ -80,12 +77,6 @@ enum rarch_ctl_state
    RARCH_CTL_SET_REMAPS_CONTENT_DIR_ACTIVE,
    RARCH_CTL_SET_REMAPS_GAME_ACTIVE,
 #endif
-
-   RARCH_CTL_IS_MISSING_BIOS,
-   RARCH_CTL_SET_MISSING_BIOS,
-   RARCH_CTL_UNSET_MISSING_BIOS,
-
-   RARCH_CTL_SET_PAUSED,
 
    RARCH_CTL_SET_SHUTDOWN,
 
@@ -99,8 +90,6 @@ enum rarch_ctl_state
    RARCH_CTL_IS_PERFCNT_ENABLE,
 
    /* Core options */
-   RARCH_CTL_HAS_CORE_OPTIONS,
-   RARCH_CTL_GET_CORE_OPTION_SIZE,
    RARCH_CTL_CORE_OPTIONS_LIST_GET,
    RARCH_CTL_CORE_OPTION_PREV,
    RARCH_CTL_CORE_OPTION_NEXT,
@@ -134,8 +123,10 @@ enum rarch_override_setting
    RARCH_OVERRIDE_SETTING_UPS_PREF,
    RARCH_OVERRIDE_SETTING_BPS_PREF,
    RARCH_OVERRIDE_SETTING_IPS_PREF,
+   RARCH_OVERRIDE_SETTING_XDELTA_PREF,
    RARCH_OVERRIDE_SETTING_LIBRETRO_DEVICE,
    RARCH_OVERRIDE_SETTING_LOG_TO_FILE,
+   RARCH_OVERRIDE_SETTING_DATABASE_SCAN,
    RARCH_OVERRIDE_SETTING_LAST
 };
 
@@ -143,6 +134,21 @@ enum runloop_action
 {
    RUNLOOP_ACTION_NONE = 0,
    RUNLOOP_ACTION_AUTOSAVE
+};
+
+enum rarch_main_wrap_flags
+{
+   RARCH_MAIN_WRAP_FLAG_VERBOSE    = (1 << 0),
+   RARCH_MAIN_WRAP_FLAG_NO_CONTENT = (1 << 1),
+   RARCH_MAIN_WRAP_FLAG_TOUCHED    = (1 << 2)
+};
+
+enum content_state_flags
+{
+   CONTENT_ST_FLAG_IS_INITED                  = (1 << 0),
+   CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT = (1 << 1),
+   CONTENT_ST_FLAG_PENDING_SUBSYSTEM_INIT     = (1 << 2),
+   CONTENT_ST_FLAG_PENDING_ROM_CRC            = (1 << 3)
 };
 
 typedef struct rarch_memory_descriptor
@@ -175,6 +181,7 @@ typedef struct rarch_system_info
       unsigned size;
    } ports;
    unsigned rotation;
+   unsigned core_requested_rotation;
    unsigned performance_level;
    char valid_extensions[255];
    bool load_no_content;
@@ -192,16 +199,6 @@ typedef struct retro_ctx_cheat_info
    unsigned index;
    bool enabled;
 } retro_ctx_cheat_info_t;
-
-typedef struct retro_ctx_api_info
-{
-   unsigned version;
-} retro_ctx_api_info_t;
-
-typedef struct retro_ctx_region_info
-{
-  unsigned region;
-} retro_ctx_region_info_t;
 
 typedef struct retro_ctx_controller_info
 {
@@ -230,16 +227,6 @@ typedef struct retro_ctx_serialize_info
    size_t size;
 } retro_ctx_serialize_info_t;
 
-typedef struct retro_ctx_size_info
-{
-   size_t size;
-} retro_ctx_size_info_t;
-
-typedef struct retro_ctx_environ_info
-{
-   retro_environment_t env;
-} retro_ctx_environ_info_t;
-
 typedef struct retro_callbacks
 {
    retro_video_refresh_t frame_cb;
@@ -248,13 +235,6 @@ typedef struct retro_callbacks
    retro_input_state_t state_cb;
    retro_input_poll_t poll_cb;
 } retro_callbacks_t;
-
-enum rarch_main_wrap_flags
-{
-   RARCH_MAIN_WRAP_FLAG_VERBOSE    = (1 << 0),
-   RARCH_MAIN_WRAP_FLAG_NO_CONTENT = (1 << 1),
-   RARCH_MAIN_WRAP_FLAG_TOUCHED    = (1 << 2)
-};
 
 struct rarch_main_wrap
 {
@@ -267,12 +247,6 @@ struct rarch_main_wrap
    int argc;
    uint8_t flags;
 };
-
-typedef struct rarch_resolution
-{
-   unsigned idx;
-   unsigned id;
-} rarch_resolution_t;
 
 /* All run-time- / command line flag-related globals go here. */
 
@@ -291,8 +265,16 @@ typedef struct global
          {
             uint32_t *list;
             unsigned count;
-            rarch_resolution_t current;
-            rarch_resolution_t initial;
+            struct
+            {
+               unsigned idx;
+               unsigned id;
+            } current;
+            struct
+            {
+               unsigned idx;
+               unsigned id;
+            } initial;
             bool check;
          } resolutions;
          unsigned      gamma_correction;
@@ -343,14 +325,6 @@ typedef struct content_file_list
    struct retro_game_info_ext *game_info_ext;
    size_t size;
 } content_file_list_t;
-
-enum content_state_flags
-{
-   CONTENT_ST_FLAG_IS_INITED                  = (1 << 0),
-   CONTENT_ST_FLAG_CORE_DOES_NOT_NEED_CONTENT = (1 << 1),
-   CONTENT_ST_FLAG_PENDING_SUBSYSTEM_INIT     = (1 << 2),
-   CONTENT_ST_FLAG_PENDING_ROM_CRC            = (1 << 3)
-};
 
 typedef struct content_state
 {

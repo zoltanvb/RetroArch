@@ -25,6 +25,12 @@
 #include "../font_driver.h"
 #include "../../retroarch.h"
 
+enum sd2l_flags
+{
+   SDL2_FLAG_QUITTING      = (1 << 0),
+   SDL2_FLAG_SHOULD_RESIZE = (1 << 1)
+};
+
 typedef struct sdl2_tex
 {
    SDL_Texture *tex;
@@ -57,9 +63,7 @@ typedef struct _sdl2_video
    uint8_t font_g;
    uint8_t font_b;
 
-   bool gl;
-   bool quitting;
-   bool should_resize;
+   uint8_t flags;
 } sdl2_video_t;
 
 void sdl2_set_handles(void *data, enum rarch_display_type 
