@@ -1353,6 +1353,10 @@
  * to the highest existing value. */
 #define DEFAULT_SAVESTATE_AUTO_INDEX false
 
+/* When auto incrementing state index, wrap around after
+ * saving savestate_max_keep amount of states. */
+#define DEFAULT_SAVESTATE_WRAPAROUND false
+
 /* Specifies the maximum number of savestates to keep
  * when savestate auto index is enabled
  * > When limit is exceeded, savestate with the lowest
@@ -1361,6 +1365,13 @@
  * > Setting value to zero disables the limit (no
  *   savestates will be deleted in this case) */
 #define DEFAULT_SAVESTATE_MAX_KEEP 0
+
+/* Specifies the maximum number of savestates to exclude
+ * when savestate auto increment and wraparound is on.
+ * This enables user to have this many "manual"
+ * save states that the auto increment will not
+ * overwrite. */
+#define DEFAULT_SAVESTATE_RESERVED_INDEXES 0
 
 /* When recording replays, replay index is automatically
  * incremented before recording starts.

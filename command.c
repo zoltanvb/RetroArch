@@ -1419,33 +1419,40 @@ void command_event_load_auto_state(void)
             savestate_name_auto, "failed");
 }
 
-void command_event_set_savestate_auto_index(settings_t *settings)
+/* TODO: refactor also replay slot handling here */
+static void scan_states(settings_t *settings,
+      unsigned *last_index, char *file_to_delete)
 {
-   size_t i;
-   char state_base[128];
+
+   runloop_state_t *runloop_st        = runloop_state_get_ptr();
+   bool show_hidden_files             = settings->bools.show_hidden_files;
+   bool savestate_wraparound          = settings->bools.savestate_wraparound;
+   unsigned savestate_max_keep        = settings->uints.savestate_max_keep;
+   unsigned reserved_indexes          = settings->uints.savestate_reserved_indexes;
+   int curr_state_slot                = settings->ints.state_slot;
+
+   unsigned max_idx                   = 0;
+   unsigned loa_idx                   = 0;
+   unsigned min_idx                   = UINT_MAX;
+   unsigned gap_idx                   = UINT_MAX;
+   unsigned del_idx                   = UINT_MAX;
+   retro_bits_512_t slot_mapping_low  = {0};
+   retro_bits_512_t slot_mapping_high = {0};
+
+   struct string_list *dir_list       = NULL;
+   const char *savefile_root          = NULL;
+   size_t savefile_root_length        = 0;
+
+   size_t i, cnt                      = 0;
    char state_dir[PATH_MAX_LENGTH];
+   /* TODO: Base name of 128 may be too short */      
+   char state_base[128];
 
-   struct string_list *dir_list      = NULL;
-   unsigned max_idx                  = 0;
-   runloop_state_t *runloop_st       = runloop_state_get_ptr();
-   bool savestate_auto_index         = settings->bools.savestate_auto_index;
-   bool show_hidden_files            = settings->bools.show_hidden_files;
-
-   if (!savestate_auto_index)
-      return;
-
-   /* Find the file in the same directory as runloop_st->savestate_name
-    * with the largest numeral suffix.
-    *
-    * E.g. /foo/path/content.state, will try to find
-    * /foo/path/content.state%d, where %d is the largest number available.
-    */
    fill_pathname_basedir(state_dir, runloop_st->name.savestate,
          sizeof(state_dir));
 
    dir_list = dir_list_new_special(state_dir, DIR_LIST_PLAIN, NULL,
          show_hidden_files);
-
    if (!dir_list)
       return;
 
@@ -1456,64 +1463,6 @@ void command_event_set_savestate_auto_index(settings_t *settings)
    {
       unsigned idx;
       char elem_base[128]             = {0};
-      const char *end                 = NULL;
-      const char *dir_elem            = dir_list->elems[i].data;
-
-      fill_pathname_base(elem_base, dir_elem, sizeof(elem_base));
-
-      if (strstr(elem_base, state_base) != elem_base)
-         continue;
-
-      end = dir_elem + strlen(dir_elem);
-      while ((end > dir_elem) && ISDIGIT((int)end[-1]))
-         end--;
-
-      idx = (unsigned)strtoul(end, NULL, 0);
-      if (idx > max_idx)
-         max_idx = idx;
-   }
-
-   dir_list_free(dir_list);
-
-   configuration_set_int(settings, settings->ints.state_slot, max_idx);
-
-   RARCH_LOG("[State]: %s: #%d\n",
-         msg_hash_to_str(MSG_FOUND_LAST_STATE_SLOT),
-         max_idx);
-}
-
-void command_event_set_savestate_garbage_collect(
-      unsigned max_to_keep,
-      bool show_hidden_files
-      )
-{
-   size_t i, cnt = 0;
-   char state_dir[PATH_MAX_LENGTH];
-   char state_base[128];
-   runloop_state_t *runloop_st       = runloop_state_get_ptr();
-
-   struct string_list *dir_list      = NULL;
-   unsigned min_idx                  = UINT_MAX;
-   const char *oldest_save           = NULL;
-
-   /* Similar to command_event_set_savestate_auto_index(),
-    * this will find the lowest numbered save-state */
-   fill_pathname_basedir(state_dir, runloop_st->name.savestate,
-         sizeof(state_dir));
-
-   dir_list = dir_list_new_special(state_dir, DIR_LIST_PLAIN, NULL,
-         show_hidden_files);
-
-   if (!dir_list)
-      return;
-
-   fill_pathname_base(state_base, runloop_st->name.savestate,
-         sizeof(state_base));
-
-   for (i = 0; i < dir_list->size; i++)
-   {
-      unsigned idx;
-      char elem_base[128];
       const char *ext                 = NULL;
       const char *end                 = NULL;
       const char *dir_elem            = dir_list->elems[i].data;
@@ -1535,39 +1484,196 @@ void command_event_set_savestate_garbage_collect(
       if (!string_starts_with(elem_base, state_base))
          continue;
 
-      /* This looks like a valid save */
-      cnt++;
+      /* This looks like a valid savestate */
+      /* Save filename root and length (once) */
+      if (savefile_root_length == 0)
+      {
+         savefile_root = dir_elem;
+         savefile_root_length = strlen(dir_elem);
+      }
 
-      /* > Get index */
+      /* Decode the savestate index */
       end = dir_elem + strlen(dir_elem);
       while ((end > dir_elem) && ISDIGIT((int)end[-1]))
+      {
          end--;
-
+         if (savefile_root == dir_elem)
+            savefile_root_length--;
+      }
       idx = string_to_unsigned(end);
 
-      /* > Check if this is the lowest index so far */
+      /* Simple administration: max, min, total. */
+      if (idx > max_idx)
+         max_idx = idx;
       if (idx < min_idx)
-      {
-         min_idx     = idx;
-         oldest_save = dir_elem;
-      }
+         min_idx = idx;
+      cnt++;
+
+      /* Maintain a 2x512 bit map of occupied save states */
+      if (idx<512)
+         BIT512_SET(slot_mapping_low,idx);
+      else if (idx<1024)
+         BIT512_SET(slot_mapping_high,idx-512);
    }
 
+   /* No wraparound: delete lowest, load highest (already set), gap is irrelevant */
+   if (!savestate_wraparound)
+   {
+     del_idx = min_idx;
+     loa_idx = max_idx;
+   }
+   else
+   {
+      /* Next loop on the bitmap, since the file system may have presented the files in any order above */
+      for(i=reserved_indexes ; i <= reserved_indexes + savestate_max_keep ; i++)
+      {
+         /* Unoccupied save slots */
+         if ((i < 512 && !BIT512_GET(slot_mapping_low,  i)) ||
+             (i > 511 && !BIT512_GET(slot_mapping_high, i-512)) )
+         {
+            /* Gap index: lowest free slot in the wraparound range */
+            if (gap_idx == UINT_MAX)
+               gap_idx = i;
+         }
+         /* Occupied save slots */
+         else
+         {
+            /* Del index: first occupied slot in the wraparound range,
+               after gap index */
+            if (gap_idx <  UINT_MAX &&
+                del_idx == UINT_MAX)
+               del_idx = i;
+         }
+      }
+      /* Special cases of wraparound */
+      /* No previous savestate - set to end, so that first save 
+         goes to first allowed index */
+      if (cnt == 0)
+      {
+         loa_idx = reserved_indexes + savestate_max_keep;
+         gap_idx = reserved_indexes + savestate_max_keep;
+         del_idx = reserved_indexes + savestate_max_keep;
+      }
+      /* No gap found - deduct from current index or default
+         and set (missing) gap index to be deleted */
+      else if (gap_idx == UINT_MAX)
+      {
+         if ( (unsigned)curr_state_slot >= reserved_indexes &&
+              (unsigned)curr_state_slot < reserved_indexes + savestate_max_keep)
+         {
+            gap_idx = curr_state_slot + 1;
+            loa_idx = curr_state_slot;
+         }
+         else if ( (unsigned)curr_state_slot == reserved_indexes + savestate_max_keep)
+         {
+            gap_idx = reserved_indexes;
+            loa_idx = reserved_indexes + savestate_max_keep;
+         }
+         else
+         {
+            gap_idx = reserved_indexes;
+            loa_idx = reserved_indexes + savestate_max_keep;
+         }
+         del_idx = gap_idx;
+      }
+      /* Gap found */
+      else 
+      {
+         /* No candidate to delete */
+         if (del_idx == UINT_MAX)
+         {
+            /* Either gap is at the end of the range: wraparound.
+               or there is no better idea than the lowest index  */
+            del_idx = reserved_indexes;
+         }
+         /* Adjust load index */
+         if (gap_idx == reserved_indexes)
+            loa_idx = reserved_indexes + savestate_max_keep;
+         else
+            loa_idx = gap_idx - 1;
+      }
+   }
+   RARCH_DBG("[State]: savestate scanning finished, used slots:%d, min-max:%d-%d, "
+             "load index %d, gap index %d, delete index %d\n", 
+             cnt, min_idx, max_idx, loa_idx, gap_idx, del_idx);
+   
+   if (last_index != NULL)
+   {
+         *last_index = loa_idx;
+   }
+   if (file_to_delete != NULL && cnt >= savestate_max_keep)
+   {
+      strlcpy(file_to_delete, savefile_root, savefile_root_length+1);
+      snprintf(file_to_delete+savefile_root_length, 5, "%d", del_idx);
+   }
+
+   dir_list_free(dir_list);
+}
+
+/* Logic moved here so that all save state wraparound code is in one file. */
+int command_event_get_next_savestate_auto_index(settings_t *settings)
+{
+   unsigned reserved_indexes = settings->uints.savestate_reserved_indexes;
+   unsigned savestate_max_keep  = settings->uints.savestate_max_keep;
+   bool savestate_wraparound    = settings->bools.savestate_wraparound;
+   int new_state_slot           = settings->ints.state_slot + 1;
+   
+   if (savestate_wraparound)
+   {
+      /* If previous save was not in the wraparound range, or it overflows,
+         return to the start of the range. */
+      if( (unsigned)new_state_slot > reserved_indexes + savestate_max_keep)
+         new_state_slot = reserved_indexes;
+      /* If previous save was in the overwrite prevented range (possible manual save),
+         find out where to resume */
+      else if ((unsigned)new_state_slot < reserved_indexes + 1)
+      {
+         unsigned max_idx = 0;
+         scan_states(settings, &max_idx, NULL);
+         new_state_slot = (int) max_idx;
+      }
+   }
+   /* Note: basic increment (without wraparound) can go on indefinitely */
+   return new_state_slot;
+}
+
+void command_event_set_savestate_auto_index(settings_t *settings)
+{
+   unsigned max_idx                  = 0;
+   bool savestate_auto_index         = settings->bools.savestate_auto_index;
+
+   if (!savestate_auto_index)
+      return;
+
+   scan_states(settings, &max_idx, NULL);
+   configuration_set_int(settings, settings->ints.state_slot, max_idx);
+
+   RARCH_LOG("[State]: %s: #%d\n",
+         msg_hash_to_str(MSG_FOUND_LAST_STATE_SLOT),
+         max_idx);
+}
+
+static void command_event_set_savestate_garbage_collect(settings_t *settings)
+{
+   char state_to_delete[PATH_MAX_LENGTH] = {0};
+   size_t i;
+
+   scan_states(settings, NULL, state_to_delete);
    /* Only delete one save state per save action
     * > Conservative behaviour, designed to minimise
     *   the risk of deleting multiple incorrect files
     *   in case of accident */
-   if (!string_is_empty(oldest_save) && (cnt > max_to_keep))
+   if (!string_is_empty(state_to_delete))
    {
-      filestream_delete(oldest_save);
+      filestream_delete(state_to_delete);
+      RARCH_DBG("[State]: garbage collect, deleting \"%s\" \n",state_to_delete);
       /* Construct the save state thumbnail name 
        * and delete that one as well. */
-      i = strlcpy(state_dir,oldest_save,PATH_MAX_LENGTH);
-      strlcpy(state_dir + i,".png",STRLEN_CONST(".png")+1);
-      filestream_delete(state_dir);
+      i = strlen(state_to_delete);
+      strlcpy(state_to_delete + i,".png",STRLEN_CONST(".png")+1);
+      filestream_delete(state_to_delete);
+      RARCH_DBG("[State]: garbage collect, deleting \"%s\" \n",state_to_delete);
    }
-
-   dir_list_free(dir_list);
 }
 
 void command_event_set_replay_auto_index(settings_t *settings)
@@ -1998,10 +2104,7 @@ bool command_event_main_state(unsigned cmd)
 
                /* Clean up excess savestates if necessary */
                if (savestate_auto_index && (savestate_max_keep > 0))
-                  command_event_set_savestate_garbage_collect(
-                        settings->uints.savestate_max_keep,
-                        settings->bools.show_hidden_files
-                        );
+                  command_event_set_savestate_garbage_collect(settings);
 
                if (frame_time_counter_reset_after_save_state)
                   video_st->frame_time_count = 0;

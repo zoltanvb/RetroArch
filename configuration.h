@@ -225,6 +225,7 @@ typedef struct settings
       unsigned replay_checkpoint_interval;
       unsigned replay_max_keep;
       unsigned savestate_max_keep;
+      unsigned savestate_reserved_indexes;
       unsigned network_cmd_port;
       unsigned network_remote_base_port;
       unsigned keymapper_port;
@@ -989,6 +990,7 @@ typedef struct settings
       bool block_sram_overwrite;
       bool replay_auto_index;
       bool savestate_auto_index;
+      bool savestate_wraparound;
       bool savestate_auto_save;
       bool savestate_auto_load;
       bool savestate_thumbnail_enable;

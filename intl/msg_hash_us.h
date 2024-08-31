@@ -4778,6 +4778,14 @@ MSG_HASH(
    "Before making a save state, the save state index is automatically increased. When loading content, the index will be set to the highest existing index."
    )
 MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_SAVESTATE_WRAPAROUND,
+   "Wrap Save State Index Automatically"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_SAVESTATE_WRAPAROUND,
+   "Keep savestate index from growing forever, by wrapping around the index after reaching the set save state amount to keep."
+   )
+MSG_HASH(
    MENU_ENUM_LABEL_VALUE_REPLAY_AUTO_INDEX,
    "Increment Replay Index Automatically"
    )
@@ -4792,6 +4800,14 @@ MSG_HASH(
 MSG_HASH(
    MENU_ENUM_SUBLABEL_SAVESTATE_MAX_KEEP,
    "Limit the number of save states that will be created when 'Increment Save State Index Automatically' is enabled. If limit is exceeded when saving a new state, the existing state with the lowest index will be deleted. A value of '0' means unlimited states will be recorded."
+   )
+MSG_HASH(
+   MENU_ENUM_LABEL_VALUE_SAVESTATE_RESERVED_INDEXES,
+   "Reserve Save State Slots When Using Wraparound"
+   )
+MSG_HASH(
+   MENU_ENUM_SUBLABEL_SAVESTATE_RESERVED_INDEXES,
+   "When save state index wraparound is enabled, do not overwrite this many save states at the beginning of the list. By selecting 5, save state slots 0..4 can be used for manual saves and will not be overwritten by auto increment saves."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_REPLAY_MAX_KEEP,

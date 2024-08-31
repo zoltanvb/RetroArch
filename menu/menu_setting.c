@@ -11688,6 +11688,24 @@ static bool setting_append_list(
             (*list)[list_info->index - 1].action_left   = &setting_bool_action_left_with_refresh;
             (*list)[list_info->index - 1].action_right  = &setting_bool_action_right_with_refresh;
 
+            CONFIG_BOOL(
+                  list, list_info,
+                  &settings->bools.savestate_wraparound,
+                  MENU_ENUM_LABEL_SAVESTATE_WRAPAROUND,
+                  MENU_ENUM_LABEL_VALUE_SAVESTATE_WRAPAROUND,
+                  DEFAULT_SAVESTATE_WRAPAROUND,
+                  MENU_ENUM_LABEL_VALUE_OFF,
+                  MENU_ENUM_LABEL_VALUE_ON,
+                  &group_info,
+                  &subgroup_info,
+                  parent_group,
+                  general_write_handler,
+                  general_read_handler,
+                  SD_FLAG_NONE);
+            (*list)[list_info->index - 1].action_ok     = &setting_bool_action_left_with_refresh;
+            (*list)[list_info->index - 1].action_left   = &setting_bool_action_left_with_refresh;
+            (*list)[list_info->index - 1].action_right  = &setting_bool_action_right_with_refresh;
+
             CONFIG_UINT(
                   list, list_info,
                   &settings->uints.savestate_max_keep,
@@ -11701,6 +11719,20 @@ static bool setting_append_list(
                   general_read_handler);
             (*list)[list_info->index - 1].action_ok     = &setting_action_ok_uint;
             menu_settings_list_current_add_range(list, list_info, 0, 999, 1, true, true);
+
+            CONFIG_UINT(
+                  list, list_info,
+                  &settings->uints.savestate_reserved_indexes,
+                  MENU_ENUM_LABEL_SAVESTATE_RESERVED_INDEXES,
+                  MENU_ENUM_LABEL_VALUE_SAVESTATE_RESERVED_INDEXES,
+                  DEFAULT_SAVESTATE_RESERVED_INDEXES,
+                  &group_info,
+                  &subgroup_info,
+                  parent_group,
+                  general_write_handler,
+                  general_read_handler);
+            (*list)[list_info->index - 1].action_ok     = &setting_action_ok_uint;
+            menu_settings_list_current_add_range(list, list_info, 0, 100, 1, true, true);
 
 #ifdef HAVE_BSV_MOVIE
             CONFIG_BOOL(

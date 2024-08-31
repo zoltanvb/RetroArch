@@ -792,11 +792,13 @@ DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_libretro_log_level,            MENU_
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_frontend_log_level,            MENU_ENUM_SUBLABEL_FRONTEND_LOG_LEVEL)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_perfcnt_enable,                MENU_ENUM_SUBLABEL_PERFCNT_ENABLE)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_auto_save,           MENU_ENUM_SUBLABEL_SAVESTATE_AUTO_SAVE)
+DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_wraparound,          MENU_ENUM_SUBLABEL_SAVESTATE_WRAPAROUND)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_auto_load,           MENU_ENUM_SUBLABEL_SAVESTATE_AUTO_LOAD)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_thumbnail_enable,    MENU_ENUM_SUBLABEL_SAVESTATE_THUMBNAIL_ENABLE)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_save_file_compression,         MENU_ENUM_SUBLABEL_SAVE_FILE_COMPRESSION)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_file_compression,    MENU_ENUM_SUBLABEL_SAVESTATE_FILE_COMPRESSION)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_max_keep,            MENU_ENUM_SUBLABEL_SAVESTATE_MAX_KEEP)
+DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_savestate_reserved_indexes,    MENU_ENUM_SUBLABEL_SAVESTATE_RESERVED_INDEXES)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_autosave_interval,             MENU_ENUM_SUBLABEL_AUTOSAVE_INTERVAL)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_replay_max_keep,               MENU_ENUM_SUBLABEL_REPLAY_MAX_KEEP)
 DEFAULT_SUBLABEL_MACRO(action_bind_sublabel_replay_checkpoint_interval,    MENU_ENUM_SUBLABEL_REPLAY_CHECKPOINT_INTERVAL)
@@ -4001,6 +4003,9 @@ int menu_cbs_init_bind_sublabel(menu_file_list_cbs_t *cbs,
          case MENU_ENUM_LABEL_SAVESTATE_MAX_KEEP:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_savestate_max_keep);
             break;
+         case MENU_ENUM_LABEL_SAVESTATE_RESERVED_INDEXES:
+            BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_savestate_reserved_indexes);
+            break;
          case MENU_ENUM_LABEL_REPLAY_MAX_KEEP:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_replay_max_keep);
             break;
@@ -4015,6 +4020,9 @@ int menu_cbs_init_bind_sublabel(menu_file_list_cbs_t *cbs,
             break;
          case MENU_ENUM_LABEL_SAVESTATE_AUTO_SAVE:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_savestate_auto_save);
+            break;
+         case MENU_ENUM_LABEL_SAVESTATE_WRAPAROUND:
+            BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_savestate_wraparound);
             break;
          case MENU_ENUM_LABEL_SAVESTATE_AUTO_LOAD:
             BIND_ACTION_SUBLABEL(cbs, action_bind_sublabel_savestate_auto_load);
