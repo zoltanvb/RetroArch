@@ -1419,7 +1419,17 @@ void command_event_load_auto_state(void)
             savestate_name_auto, "failed");
 }
 
-/* TODO: refactor also replay slot handling here */
+
+
+/**
+ * Scans existing states to determine which one should be loaded
+ * and which one can be deleted, using savestate wraparound if
+ * enabled.
+ *
+ * @param settings The usual RetroArch settings ptr.
+ * @param last_index Return value for load slot.
+ * @param file_to_delete Return value for file name that should be removed.
+ */
 static void scan_states(settings_t *settings,
       unsigned *last_index, char *file_to_delete)
 {
@@ -1444,10 +1454,13 @@ static void scan_states(settings_t *settings,
    size_t savefile_root_length        = 0;
 
    size_t i, cnt                      = 0;
+   size_t cnt_without_reserve         = 0;
    char state_dir[PATH_MAX_LENGTH];
-   /* TODO: Base name of 128 may be too short */      
+   /* Base name of 128 may be too short for some (<<1%) of the long 
+      tosec-based file names, but in practice truncating will not 
+      lead to mismatch */
    char state_base[128];
-
+ 
    fill_pathname_basedir(state_dir, runloop_st->name.savestate,
          sizeof(state_dir));
 
@@ -1462,10 +1475,10 @@ static void scan_states(settings_t *settings,
    for (i = 0; i < dir_list->size; i++)
    {
       unsigned idx;
-      char elem_base[128]             = {0};
-      const char *ext                 = NULL;
-      const char *end                 = NULL;
-      const char *dir_elem            = dir_list->elems[i].data;
+      char elem_base[128]  = {0};
+      const char *ext      = NULL;
+      const char *end      = NULL;
+      const char *dir_elem = dir_list->elems[i].data;
 
       if (string_is_empty(dir_elem))
          continue;
@@ -1508,6 +1521,8 @@ static void scan_states(settings_t *settings,
       if (idx < min_idx)
          min_idx = idx;
       cnt++;
+      if (idx >= reserved_indexes)
+         cnt_without_reserve++;
 
       /* Maintain a 2x512 bit map of occupied save states */
       if (idx<512)
@@ -1516,7 +1531,7 @@ static void scan_states(settings_t *settings,
          BIT512_SET(slot_mapping_high,idx-512);
    }
 
-   /* No wraparound: delete lowest, load highest (already set), gap is irrelevant */
+   /* No wraparound: delete lowest, load highest (already scanned), gap is irrelevant */
    if (!savestate_wraparound)
    {
      del_idx = min_idx;
@@ -1524,6 +1539,7 @@ static void scan_states(settings_t *settings,
    }
    else
    {
+      cnt = cnt_without_reserve;
       /* Next loop on the bitmap, since the file system may have presented the files in any order above */
       for(i=reserved_indexes ; i <= reserved_indexes + savestate_max_keep ; i++)
       {
@@ -1545,7 +1561,9 @@ static void scan_states(settings_t *settings,
                del_idx = i;
          }
       }
+
       /* Special cases of wraparound */
+
       /* No previous savestate - set to end, so that first save 
          goes to first allowed index */
       if (cnt == 0)
@@ -1554,7 +1572,7 @@ static void scan_states(settings_t *settings,
          gap_idx = reserved_indexes + savestate_max_keep;
          del_idx = reserved_indexes + savestate_max_keep;
       }
-      /* No gap found - deduct from current index or default
+      /* No gap was found - deduct from current index or default
          and set (missing) gap index to be deleted */
       else if (gap_idx == UINT_MAX)
       {
@@ -1576,7 +1594,7 @@ static void scan_states(settings_t *settings,
          }
          del_idx = gap_idx;
       }
-      /* Gap found */
+      /* Gap was found */
       else 
       {
          /* No candidate to delete */
@@ -1603,40 +1621,54 @@ static void scan_states(settings_t *settings,
    }
    if (file_to_delete != NULL && cnt >= savestate_max_keep)
    {
-      strlcpy(file_to_delete, savefile_root, savefile_root_length+1);
-      snprintf(file_to_delete+savefile_root_length, 5, "%d", del_idx);
+      strlcpy(file_to_delete, savefile_root, savefile_root_length + 1);
+      snprintf(file_to_delete+savefile_root_length, 6, "%d", del_idx);
    }
 
    dir_list_free(dir_list);
 }
 
-/* Logic moved here so that all save state wraparound code is in one file. */
+/**
+ * Determines next savestate slot in case of auto-increment,
+ * i.e. save state scanning was done already earlier.
+ * Logic moved here so that all save state wraparound code is
+ * in this file.
+ *
+ * @param settings The usual RetroArch settings ptr.
+ * @return \c The next savestate slot.
+ */
 int command_event_get_next_savestate_auto_index(settings_t *settings)
 {
-   unsigned reserved_indexes = settings->uints.savestate_reserved_indexes;
-   unsigned savestate_max_keep  = settings->uints.savestate_max_keep;
-   bool savestate_wraparound    = settings->bools.savestate_wraparound;
-   int new_state_slot           = settings->ints.state_slot + 1;
+   unsigned reserved_indexes   = settings->uints.savestate_reserved_indexes;
+   unsigned savestate_max_keep = settings->uints.savestate_max_keep;
+   bool savestate_wraparound   = settings->bools.savestate_wraparound;
+   int new_state_slot          = settings->ints.state_slot + 1;
    
    if (savestate_wraparound)
    {
-      /* If previous save was not in the wraparound range, or it overflows,
+      /* If previous save was above the wraparound range, or it overflows,
          return to the start of the range. */
       if( (unsigned)new_state_slot > reserved_indexes + savestate_max_keep)
          new_state_slot = reserved_indexes;
       /* If previous save was in the overwrite prevented range (possible manual save),
          find out where to resume */
-      else if ((unsigned)new_state_slot < reserved_indexes + 1)
+      /*else if ((unsigned)new_state_slot < reserved_indexes + 1)
       {
          unsigned max_idx = 0;
          scan_states(settings, &max_idx, NULL);
          new_state_slot = (int) max_idx;
-      }
+      }*/
    }
    /* Note: basic increment (without wraparound) can go on indefinitely */
    return new_state_slot;
 }
 
+/**
+ * Determines most recent savestate slot in case of content load.
+ *
+ * @param settings The usual RetroArch settings ptr.
+ * @return \c The most recent savestate slot.
+ */
 void command_event_set_savestate_auto_index(settings_t *settings)
 {
    unsigned max_idx                  = 0;
@@ -1653,6 +1685,11 @@ void command_event_set_savestate_auto_index(settings_t *settings)
          max_idx);
 }
 
+/**
+ * Deletes the oldest save state and its thumbnail, if needed.
+ *
+ * @param settings The usual RetroArch settings ptr.
+ */
 static void command_event_set_savestate_garbage_collect(settings_t *settings)
 {
    char state_to_delete[PATH_MAX_LENGTH] = {0};
