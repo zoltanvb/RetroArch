@@ -2,10 +2,6 @@
 
 name: Crowdin Daily Workflow
 
-on:
-  schedule:
-    - cron: '0 0 1 1 1'  # every day at midnight
-
 permissions:
   contents: read
 
