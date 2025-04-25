@@ -239,7 +239,8 @@ static void linuxraw_input_poll(void *data)
       bool pressed;
       uint16_t t;
 
-      if (c == KEY_C && (linuxraw->state[KEY_LEFTCTRL] || linuxraw->state[KEY_RIGHTCTRL]))
+      /* Escape path: Ctrl + Break (Pause) */
+      if (c == KEY_PAUSE && (linuxraw->state[KEY_LEFTCTRL] || linuxraw->state[KEY_RIGHTCTRL]))
          kill(getpid(), SIGINT);
 
       pressed  = !(c & 0x80);

@@ -52,8 +52,10 @@
 #include <linux/input.h>
 #include <linux/kd.h>
 #include <linux/version.h>
+#include <signal.h>
 #elif defined(__FreeBSD__)
 #include <dev/evdev/input.h>
+#include <signal.h>
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -650,6 +652,10 @@ static void udev_handle_keyboard(void *data,
             if (udev->xkb_handling && handle_xkb(keysym, event->value) == 0)
                return;
 #endif
+            /* Escape path: Ctrl + Break (Pause) */
+            if(keysym == KEY_PAUSE && (BIT_GET(udev->state, KEY_LEFTCTRL) || BIT_GET(udev->state, KEY_RIGHTCTRL)))
+               kill(getpid(), SIGINT);
+
             input_keyboard_event(event->value,
                   input_keymaps_translate_keysym_to_rk(keysym),
                   0, 0, RETRO_DEVICE_KEYBOARD);
