@@ -108,7 +108,8 @@ static void input_autoconfigure_free(retro_task_t *task)
  * > 0: No match
  * > 20-29: Device name matches
  * > 30-39: VID+PID match
- * > 50-59: Both device name and VID+PID match */
+ * > 50-59: Both device name and VID+PID match
+ * > 60-69: All prior, plus physical port match (nice)*/
 static unsigned input_autoconfigure_get_config_file_affinity(
       autoconfig_handle_t *autoconfig_handle,
       config_file_t *config)
@@ -153,6 +154,7 @@ static unsigned input_autoconfigure_get_config_file_affinity(
       if (config_get_int(config, config_key, &tmp_int))
          config_pid = (uint16_t)tmp_int;
 
+
    /* > Bliss-Box shenanigans... */
 #ifdef HAVE_BLISSBOX
       if (autoconfig_handle->device_info.vid == BLISSBOX_VID)
@@ -185,6 +187,17 @@ static unsigned input_autoconfigure_get_config_file_affinity(
             &&  string_is_equal(entry->value,
                 autoconfig_handle->device_info.name))
          affinity += 20;
+
+      /* Check for matching physical location */
+      _len  = strlcpy(config_key, "input_phys",
+               sizeof(config_key));
+      _len += strlcpy(config_key + _len, config_key_postfix,
+               sizeof(config_key) - _len);
+      if (     (entry = config_get_entry(config, config_key))
+            && !string_is_empty(entry->value)
+            &&  string_is_equal(entry->value,
+                autoconfig_handle->device_info.phys))
+         affinity += 10;
 
       /* Store the selected alternative as last digit of affinity. */
       if (affinity > 0)
@@ -810,6 +823,7 @@ static bool autoconfigure_connect_finder(retro_task_t *task, void *user_data)
 bool input_autoconfigure_connect(
       const char *name,
       const char *display_name,
+      const char *phys,
       const char *driver,
       unsigned port,
       unsigned vid,
@@ -850,6 +864,7 @@ bool input_autoconfigure_connect(
    autoconfig_handle->device_info.pid              = pid;
    autoconfig_handle->device_info.name[0]          = '\0';
    autoconfig_handle->device_info.display_name[0]  = '\0';
+   autoconfig_handle->device_info.phys[0]          = '\0';
    autoconfig_handle->device_info.config_name[0]   = '\0';
    autoconfig_handle->device_info.joypad_driver[0] = '\0';
    autoconfig_handle->device_info.autoconfigured   = false;
@@ -871,6 +886,10 @@ bool input_autoconfigure_connect(
    if (!string_is_empty(display_name))
       strlcpy(autoconfig_handle->device_info.display_name, display_name,
             sizeof(autoconfig_handle->device_info.display_name));
+
+   if (!string_is_empty(phys))
+       strlcpy(autoconfig_handle->device_info.phys, phys,
+             sizeof(autoconfig_handle->device_info.phys));
 
    if ((driver_valid = !string_is_empty(driver)))
       strlcpy(autoconfig_handle->device_info.joypad_driver,
