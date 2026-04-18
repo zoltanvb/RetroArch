@@ -57,7 +57,8 @@ enum pl_thumb_flags
    PL_THUMB_FLAG_OVERWRITE          = (1 << 0),
    PL_THUMB_FLAG_RIGHT_THUMB_EXISTS = (1 << 1),
    PL_THUMB_FLAG_LEFT_THUMB_EXISTS  = (1 << 2),
-   PL_THUMB_FLAG_HTTP_TASK_COMPLETE = (1 << 3)
+   PL_THUMB_FLAG_HTTP_TASK_COMPLETE = (1 << 3),
+   PL_THUMB_FLAG_HTTP_TASK_FAILED   = (1 << 4)
 };
 
 typedef struct pl_thumb_handle
@@ -342,6 +343,7 @@ static void download_pl_thumbnail(pl_thumb_handle_t *pl_thumb)
 
          /* Initialise http task status */
          pl_thumb->flags             &= ~PL_THUMB_FLAG_HTTP_TASK_COMPLETE;
+         pl_thumb->flags             &= ~PL_THUMB_FLAG_HTTP_TASK_FAILED;
 
          transf->enum_idx             = MSG_UNKNOWN;
          transf->path[0]              = '\0';
@@ -357,7 +359,10 @@ static void download_pl_thumbnail(pl_thumb_handle_t *pl_thumb)
           * signal that the task is 'complete' */
          if (!(pl_thumb->http_task = (retro_task_t*)task_push_http_transfer_file(
                url, true, NULL, cb_http_task_download_pl_thumbnail, transf)))
-            pl_thumb->flags             |= PL_THUMB_FLAG_HTTP_TASK_COMPLETE;
+         {
+            pl_thumb->flags          |= PL_THUMB_FLAG_HTTP_TASK_COMPLETE;
+            pl_thumb->flags          |= PL_THUMB_FLAG_HTTP_TASK_FAILED;
+         }
       }
    }
 }
@@ -495,6 +500,9 @@ static void task_pl_thumbnail_download_handler(retro_task_t *task)
          if (pl_thumb->type_idx > 3)
          {
             next_flag = playlist_get_next_thumbnail_name_flag(pl_thumb->playlist,pl_thumb->list_index);
+            /* If the download was successful, do not attempt further variants. */
+            if (!(pl_thumb->flags & PL_THUMB_FLAG_HTTP_TASK_FAILED))
+               next_flag = PLAYLIST_THUMBNAIL_FLAG_NONE;
             if (next_flag == PLAYLIST_THUMBNAIL_FLAG_NONE)
             {
                if (pl_thumb->playlist )
